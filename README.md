@@ -53,38 +53,38 @@ The platform synthesizes **real-time Sentinel-2 multispectral satellite imagery*
 ```mermaid
 flowchart TD
     subgraph Client ["Client Browser (Leaflet.js + Vanilla ES6)"]
-        UI[Interactive Evacuation Map]
-        GeocodeUI[Address Lookup & Disambiguation]
-        Layers[Layer Toggles: Damage / Dead-Ends / Shelters / Routes]
+        UI["Interactive Evacuation Map"]
+        GeocodeUI["Address Lookup & Disambiguation"]
+        Layers["Layer Toggles: Damage / Dead-Ends / Shelters / Routes"]
     end
 
     subgraph Django ["Django 6.1 Application Layer"]
-        Views[API Views: finder/views.py]
-        Auth[User Authentication & Session Management]
-        ShelterModel[Shelter Database Model]
+        Views["API Views (finder/views.py)"]
+        Auth["User Authentication & Session Management"]
+        ShelterModel["Shelter Database Model"]
     end
 
     subgraph Engine ["Evacuation & Damage Processing Pipeline"]
-        OSMHarvest[3-Tier Road Harvester (evacuation_engine.py)]
-        ShelterFinder[OSM Overpass / Core Shelter Ingestion (shelters.py)]
-        GraphEngine[NetworkX Topology & Cost Modeler]
-        DamageCV[Computer Vision & Sentinel-2 Differencing (damage.py)]
-        DamageML[xBD Dual-Temporal Deep Learning (xbd_s12_damage.py)]
+        OSMHarvest["3-Tier Road Harvester (evacuation_engine.py)"]
+        ShelterFinder["OSM Overpass / Core Shelter Ingestion (shelters.py)"]
+        GraphEngine["NetworkX Topology & Cost Modeler"]
+        DamageCV["Computer Vision & Sentinel-2 Differencing (damage.py)"]
+        DamageML["xBD Dual-Temporal Deep Learning (xbd_s12_damage.py)"]
     end
 
     subgraph External ["External Geospatial & Remote Sensing APIs"]
-        STAC[Microsoft Planetary Computer Sentinel-2 L2A]
-        Overpass[Overpass API Mirrors]
-        CoreOSM[OpenStreetMap Core API 0.6]
-        Nominatim[OSM Nominatim Geocoding]
+        STAC["Microsoft Planetary Computer Sentinel-2 L2A"]
+        Overpass["Overpass API Mirrors"]
+        CoreOSM["OpenStreetMap Core API 0.6"]
+        Nominatim["OSM Nominatim Geocoding"]
     end
 
-    UI <-->|JSON / GeoJSON| Views
-    GeocodeUI -->|Search| Nominatim
+    UI <-->|"JSON / GeoJSON"| Views
+    GeocodeUI -->|"Search"| Nominatim
     Views --> ShelterFinder
     Views --> DamageCV
     Views --> OSMHarvest
-    DamageCV <-->|STAC Queries| STAC
+    DamageCV <-->|"STAC Queries"| STAC
     DamageCV --> DamageML
     ShelterFinder <--> Overpass
     ShelterFinder <--> CoreOSM
@@ -92,8 +92,8 @@ flowchart TD
     OSMHarvest <--> Overpass
     OSMHarvest <--> CoreOSM
     OSMHarvest --> GraphEngine
-    DamageML -->|Damage Polygons| GraphEngine
-    GraphEngine -->|Cheapest Diverse Paths| Views
+    DamageML -->|"Damage Polygons"| GraphEngine
+    GraphEngine -->|"Cheapest Diverse Paths"| Views
 ```
 
 ---
