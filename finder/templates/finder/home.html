@@ -1,0 +1,16 @@
+{% extends "finder/base.html" %}
+
+{% block title %}Home{% endblock %}
+
+{% block content %}
+  <h1>Find a safer direction from an address</h1>
+  <p class="lede">Sign in, search a street address, and confirm the place. The 5 km satellite image comes after this step.</p>
+  <div class="actions">
+    {% if user.is_authenticated %}
+      <a class="button" href="{% url 'dashboard' %}">Go to dashboard</a>
+    {% else %}
+      <a class="button" href="{% url 'login' %}">Log in</a>
+      <a class="button secondary" href="{% url 'register' %}">Register</a>
+    {% endif %}
+  </div>
+{% endblock %}

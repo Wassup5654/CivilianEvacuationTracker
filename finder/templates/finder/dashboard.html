@@ -1,0 +1,79 @@
+{% extends "finder/base.html" %}
+{% load static %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'finder/map.css' %}?v=2.2">
+{% endblock %}
+
+{% block content %}
+  <div class="evac-app">
+    <!-- ── Top bar ── -->
+    <div class="evac-topbar">
+      <h1>Evacuation Planner</h1>
+      <p class="lede">Signed in as {{ user.username }}.</p>
+      <form class="evac-search-row" id="lookup">
+        {% csrf_token %}
+        <input id="address" type="text" name="q" autocomplete="off"
+               placeholder="Street address, city, country" required
+               aria-label="Street address">
+        <button type="submit">Find</button>
+        <button type="button" id="geolocate-btn" class="secondary"
+                title="Use my current location" aria-label="Use my location">📍</button>
+        <div class="mode-toggle" role="radiogroup" aria-label="Travel mode">
+          <button type="button" class="mode-btn active" data-mode="walk"
+                  aria-pressed="true" title="Walking mode">🚶 Walk</button>
+          <button type="button" class="mode-btn" data-mode="drive"
+                  aria-pressed="false" title="Driving mode">🚗 Drive</button>
+        </div>
+      </form>
+      <p id="status" class="status" role="status"></p>
+      <ul id="matches" class="matches"></ul>
+    </div>
+
+    <!-- ── Main layout: map + panel ── -->
+    <div class="evac-body" id="evac-body" hidden>
+      <div class="evac-map-wrap">
+        <div id="map" class="evac-map" tabindex="0" aria-label="Evacuation map"></div>
+      </div>
+      <aside class="evac-panel" id="evac-panel" aria-label="Route information">
+        <h2>Routes</h2>
+        <div id="route-cards" class="route-cards">
+          <p class="panel-placeholder">Search an address and draw an evacuation zone to see routes.</p>
+        </div>
+
+        <!-- Layer toggles -->
+        <fieldset class="layer-toggles">
+          <legend>Layers</legend>
+          <label><input type="checkbox" id="toggle-damage" checked> Damage areas</label>
+          <label><input type="checkbox" id="toggle-deadends" checked> Dead ends</label>
+          <label><input type="checkbox" id="toggle-shelters" checked> Shelters</label>
+          <label><input type="checkbox" id="toggle-routes" checked> Routes</label>
+        </fieldset>
+
+        <!-- Legend -->
+        <div class="map-legend">
+          <h3>Legend</h3>
+          <div class="legend-row"><span class="swatch" style="background:#DC2626;opacity:0.4"></span> Damage area</div>
+          <div class="legend-row"><span class="swatch route-swatch" style="background:#16A34A"></span> Route 1 (best)</div>
+          <div class="legend-row"><span class="swatch route-swatch" style="background:#7C3AED"></span> Route 2</div>
+          <div class="legend-row"><span class="swatch route-swatch" style="background:#EA580C"></span> Route 3</div>
+          <div class="legend-row"><span class="swatch" style="background:#22C55E"></span> Shelter</div>
+          <div class="legend-row"><span class="swatch" style="background:#6B7280;border-style:dashed"></span> Dead end / stranded</div>
+          <div class="legend-row"><span class="swatch" style="background:#2563EB;opacity:0.3"></span> Evacuation zone</div>
+        </div>
+
+        <!-- Footer info -->
+        <div class="evac-footer" id="evac-footer">
+          <p id="imagery-date" class="footer-note"></p>
+          <p class="footer-disclaimer">⚠ Damage is estimated from satellite imagery and may be wrong. Follow official guidance.</p>
+        </div>
+      </aside>
+    </div>
+  </div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'finder/map.js' %}?v=2.2"></script>
+{% endblock %}

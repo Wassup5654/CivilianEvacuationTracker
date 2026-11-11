@@ -1,0 +1,40 @@
+[
+  {
+    "query": "Maidan Nezalezhnosti, Kyiv, Ukraine",
+    "display_name": "майдан Незалежності, Центр, Шевченківський район, Київ, Україна",
+    "latitude": "50.4502431",
+    "longitude": "30.5240622",
+    "outcome": "clear scene",
+    "captured": "2026-10-03T08:58:11.025000Z",
+    "cloud_cover": 3.328735,
+    "image_url": "https://planetarycomputer.microsoft.com/api/data/v1/item/bbox/30.488793,50.427785,30.559332,50.472701/512x512.png?collection=sentinel-2-l2a&item=S2C_MSIL2A_20261003T085811_R007_T36UUB_20261003T123808&assets=visual&asset_bidx=visual%7C1%2C2%2C3&nodata=0"
+  },
+  {
+    "query": "Sumska Street 1, Kharkiv, Ukraine",
+    "display_name": "The Varenik, 1, Сумська вулиця, Університетська гірка, Шевченківський район, Харків, Харківська міська громада, Харківський район, Харківська область, 61057, Україна",
+    "latitude": "49.9934019",
+    "longitude": "36.2319168",
+    "outcome": "clear scene",
+    "captured": "2026-10-02T08:37:59.024000Z",
+    "cloud_cover": 13.27333,
+    "image_url": "https://planetarycomputer.microsoft.com/api/data/v1/item/bbox/36.196983,49.970944,36.266850,50.015860/512x512.png?collection=sentinel-2-l2a&item=S2B_MSIL2A_20261002T083759_R064_T37UCR_20261002T125444&assets=visual&asset_bidx=visual%7C1%2C2%2C3&nodata=0"
+  },
+  {
+    "query": "Valiasr Street, Tehran, Iran",
+    "display_name": "ولی عصر, ساعی, ناحیه ۵, منطقه ۶ شهر تهران, شهر تهران, بخش مرکزی شهرستان تهران, شهرستان تهران, استان تهران, 14346-64417, ایران",
+    "latitude": "35.7366807",
+    "longitude": "51.4093358",
+    "outcome": "clear scene",
+    "captured": "2026-09-28T07:16:19.024000Z",
+    "cloud_cover": 4.384285,
+    "image_url": "https://planetarycomputer.microsoft.com/api/data/v1/item/bbox/51.381669,35.714223,51.437003,35.759138/512x512.png?collection=sentinel-2-l2a&item=S2B_MSIL2A_20260928T071619_R006_T39SWV_20260928T112008&assets=visual&asset_bidx=visual%7C1%2C2%2C3&nodata=0"
+  },
+  {
+    "query": "Quibdo, Colombia",
+    "display_name": "Quibdó, Atrato, Chocó, RAP Pacífico, Colombia",
+    "latitude": "5.6912838",
+    "longitude": "-76.6531337",
+    "outcome": "no clear scene",
+    "error": "No clear satellite image in the last 30 days."
+  }
+]

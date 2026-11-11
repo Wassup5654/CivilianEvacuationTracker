@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Find an address</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1c1917;
+      --muted: #57534e;
+      --line: #d6d3d1;
+      --paper: #fafaf9;
+      --card: #ffffff;
+      --accent: #1d4ed8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.45;
+    }
+    main {
+      max-width: 40rem;
+      margin: 0 auto;
+      padding: 1.5rem 1rem 3rem;
+    }
+    h1 { font-size: 1.6rem; margin: 0 0 0.4rem; }
+    p { margin: 0.4rem 0; }
+    .lede { color: var(--muted); }
+    form { display: flex; gap: 0.5rem; margin: 1.25rem 0; }
+    input[type="text"] {
+      flex: 1;
+      font: inherit;
+      padding: 0.7rem 0.8rem;
+      border: 1px solid var(--line);
+      border-radius: 0.4rem;
+      background: var(--card);
+    }
+    button {
+      font: inherit;
+      padding: 0.7rem 0.9rem;
+      border-radius: 0.4rem;
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: white;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: var(--card);
+      color: var(--accent);
+    }
+    .status { min-height: 1.4rem; color: var(--muted); }
+    .status.error { color: #991b1b; }
+    ul { list-style: none; padding: 0; margin: 0.5rem 0 0; }
+    li {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 0.5rem;
+      padding: 0.9rem;
+      margin-bottom: 0.6rem;
+    }
+    li strong { display: block; }
+    .kind { color: var(--muted); font-size: 0.9rem; }
+    .chosen {
+      margin-top: 1rem;
+      padding: 1rem;
+      border-radius: 0.5rem;
+      background: #ecfdf5;
+      border: 1px solid #86efac;
+    }
+    .coords { font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Find an address</h1>
+    <p class="lede">Type a street address. The map service may return more than one place. Pick the match before any satellite image is loaded.</p>
+    <form id="lookup">
+      <input id="address" type="text" name="q" autocomplete="off" placeholder="Street address, city, country" required>
+      <button type="submit">Find</button>
+    </form>
+    <p id="status" class="status" role="status"></p>
+    <ul id="matches"></ul>
+    <section id="chosen" class="chosen" hidden></section>
+  </main>
+  <script>
+    const form = document.getElementById("lookup");
+    const input = document.getElementById("address");
+    const status = document.getElementById("status");
+    const list = document.getElementById("matches");
+    const chosen = document.getElementById("chosen");
+
+    function setStatus(text, isError) {
+      status.textContent = text;
+      status.className = isError ? "status error" : "status";
+    }
+
+    function showChoice(match) {
+      chosen.hidden = false;
+      chosen.innerHTML = "";
+      const title = document.createElement("strong");
+      title.textContent = "Using this place";
+      const name = document.createElement("p");
+      name.textContent = match.display_name;
+      const coords = document.createElement("p");
+      coords.className = "coords";
+      coords.textContent = match.latitude + ", " + match.longitude;
+      const next = document.createElement("p");
+      next.textContent = "These coordinates are confirmed. The satellite image is not loaded yet.";
+      chosen.append(title, name, coords, next);
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      chosen.hidden = true;
+      chosen.replaceChildren();
+      list.replaceChildren();
+      setStatus("Looking up that address…", false);
+      const query = input.value.trim();
+      try {
+        const response = await fetch("/api/search?q=" + encodeURIComponent(query));
+        const payload = await response.json();
+        if (!response.ok) {
+          setStatus(payload.error || "Address lookup failed.", true);
+          return;
+        }
+        if (!payload.matches.length) {
+          setStatus("No place matched that address. Add the city and country, then try again.", true);
+          return;
+        }
+        const count = payload.matches.length;
+        setStatus(count === 1
+          ? "One place matched. Confirm it if this is the right address."
+          : count + " places matched. Pick the right one.", false);
+        for (const match of payload.matches) {
+          const item = document.createElement("li");
+          const name = document.createElement("strong");
+          name.textContent = match.display_name;
+          const kind = document.createElement("p");
+          kind.className = "kind";
+          kind.textContent = match.kind || "place";
+          const coords = document.createElement("p");
+          coords.className = "coords";
+          coords.textContent = match.latitude + ", " + match.longitude;
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "secondary";
+          button.textContent = "Use this place";
+          button.addEventListener("click", () => showChoice(match));
+          item.append(name, kind, coords, button);
+          list.append(item);
+        }
+      } catch (err) {
+        setStatus("The page could not reach the address lookup.", true);
+      }
+    });
+  </script>
+</body>
+</html>
