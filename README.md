@@ -51,7 +51,7 @@ The platform synthesizes **real-time Sentinel-2 multispectral satellite imagery*
 - **Multi-Route Diversity**: Generates up to 3 distinct topological alternatives so that if one arterial avenue becomes compromised in an emergency, evacuees have pre-calculated alternates.
 - **Fail-Safe Offline/Resilient Ingestion**: 3-tier road harvesting engine with automatic fallback from Overpass API mirrors to recursive 2×2 Core OpenStreetMap chunked downloads.
 - **Static 5 km Satellite Corridor Mode**: Generates 10-meter-per-pixel annotated Sentinel-2 imagery with scale bars, impassable alerts, and civilian next-steps instructions.
-- **Street-Level Imagery (Mapillary 360°)**: Integrated on-demand street view powered by Mapillary Graph API v4 and MapillaryJS. Allows inspecting destination shelters, road intersections, and route waypoints, with 1-click fallback links to Google Street View and Mapillary Web.
+- **Street-Level Imagery with Dual-Layer Fallback**: Integrated on-demand street view powered by Mapillary Graph API v4 and MapillaryJS. Offers embedded 360° navigation of destination shelters, intersections, and waypoints with seamless, automatic fallback links to Google Street View and Mapillary Web—guaranteeing visual coverage even when crowd-sourced photos are unavailable in a specific sector.
 - **Privacy-by-Design**: Absolute zero database storage of searched addresses or GPS coordinates.
 
 ---
@@ -166,6 +166,12 @@ Shelter discovery ([`shelters.py`](shelters.py)) combines live OpenStreetMap dat
 - **Automatic Range Expansion**: If no shelters exist in the immediate area, the search window automatically expands up to 2.0 km.
 - **Tag Extraction**: Parses `emergency=assembly_point`, `social_facility=shelter`, `building=bunker`, `shelter_type=*`, `operator=*`, and `addr:street=*`.
 - **Graph BFS Street Snapping**: When an OSM shelter lacks a formal name, the engine runs a breadth-first search on incident road edges in G to enrich the name (e.g. converting a bare `"Shelter"` tag into **`"Shelter on Seymour Road"`** or **`"Transit Shelter on Library Plaza"`**).
+
+### 6. Ground-Level Verification & Dual-Layer Street View
+To help civilians and aid workers visually verify safe corridors and shelter access points before moving:
+- **Embedded 360° Panoramas**: Uses MapillaryJS to render interactive street-level panoramas directly inside a sliding dashboard drawer.
+- **Dual-Layer Coverage Fallback**: When community crowd-sourced imagery is missing or sparse in a specific sector, the platform automatically provides direct deep-links to **Google Street View** and **Mapillary Web** pinned to the exact coordinates, eliminating dead ends in visual inspection.
+- **Pre-Disaster Context vs. Post-Disaster Satellite Overlay**: Street view imagery establishes structural baselines (building heights, road widths, entrance gates), which are cross-referenced with Sentinel-2 xBD damage masks to assess real-time passability.
 
 ---
 
@@ -343,7 +349,7 @@ docker run -p 8000:8000 civilian-evacuation
 The codebase includes exhaustive test suites covering graph routing, reachability algorithms, ML classifiers, and API endpoints:
 
 ```bash
-# Run Django integration & security tests (30 tests)
+# Run Django integration & security tests (31 tests)
 python manage.py test
 
 # Run Evacuation Engine synthetic graph unit tests (16 tests)
