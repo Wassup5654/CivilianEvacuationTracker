@@ -18,4 +18,5 @@ urlpatterns = [
     # New interactive-map endpoints
     path("api/context", views.context_view, name="context"),
     path("api/routes", views.routes_view, name="routes"),
+    path("api/streetview", views.streetview_view, name="streetview"),
 ]

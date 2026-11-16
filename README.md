@@ -51,6 +51,7 @@ The platform synthesizes **real-time Sentinel-2 multispectral satellite imagery*
 - **Multi-Route Diversity**: Generates up to 3 distinct topological alternatives so that if one arterial avenue becomes compromised in an emergency, evacuees have pre-calculated alternates.
 - **Fail-Safe Offline/Resilient Ingestion**: 3-tier road harvesting engine with automatic fallback from Overpass API mirrors to recursive 2×2 Core OpenStreetMap chunked downloads.
 - **Static 5 km Satellite Corridor Mode**: Generates 10-meter-per-pixel annotated Sentinel-2 imagery with scale bars, impassable alerts, and civilian next-steps instructions.
+- **Street-Level Imagery (Mapillary 360°)**: Integrated on-demand street view powered by Mapillary Graph API v4 and MapillaryJS. Allows inspecting destination shelters, road intersections, and route waypoints, with 1-click fallback links to Google Street View and Mapillary Web.
 - **Privacy-by-Design**: Absolute zero database storage of searched addresses or GPS coordinates.
 
 ---
@@ -277,6 +278,13 @@ GET /api/scene?lat=50.4501&lon=30.5234
 GET /api/annotate?lat=50.4501&lon=30.5234
 ```
 Returns 512x512 PNG imagery with a 10m/pixel scale bar, flood and structural damage overlays, and civilian safety advisories.
+
+### 4. Street-Level Imagery API
+```http
+GET /api/streetview?lat=38.04815&lon=-78.50815&token=MLY|...
+```
+Queries Mapillary Graph API v4 for the nearest crowd-sourced street panorama/photo within 150m.
+Returns image ID, capture date, compass angle, preview thumbnail, and fallback URLs for Google Street View and Mapillary Web.
 
 ---
 
