@@ -287,10 +287,12 @@ Returns 512x512 PNG imagery with a 10m/pixel scale bar, flood and structural dam
 
 ### 4. Street-Level Imagery API
 ```http
-GET /api/streetview?lat=38.04815&lon=-78.50815&token=MLY|...
+GET /api/streetview?lat=38.04815&lon=-78.50815
 ```
-Queries Mapillary Graph API v4 for the nearest crowd-sourced street panorama/photo within 150m.
-Returns image ID, capture date, compass angle, preview thumbnail, and fallback URLs for Google Street View and Mapillary Web.
+Provides street-level ground truth preview for any shelter or route waypoint via Google Street View:
+- Returns an embedded panorama iframe URL (`https://maps.google.com/maps?layer=c&cbll={lat},{lon}...` or official Google Maps Embed API if `GOOGLE_MAPS_API_KEY` is configured).
+- Generates a direct one-click fullscreen Google Street View panorama URL (`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint={lat},{lon}`).
+- Seamless integration inside the UI drawer without requiring client-side API tokens or complex setup.
 
 ---
 

@@ -163,5 +163,5 @@ SHELTER_OSM_TAGS = [
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 
-# Mapillary Street-Level Imagery Configuration
-MAPILLARY_CLIENT_TOKEN = os.environ.get("MAPILLARY_CLIENT_TOKEN", "")
+# Google Maps Street View Configuration (Optional API Key for official Embed API)
+GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")

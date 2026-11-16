@@ -253,44 +253,12 @@ class FinderViewsTestCase(TestCase):
         resp = self.client.get("/api/streetview?lat=abc&lon=def")
         self.assertEqual(resp.status_code, 400)
 
-        # 4. Valid coords without token -> returns external URLs and requires_token
+        # 4. Valid coords -> returns Google Street View embed and external URLs
         resp = self.client.get("/api/streetview?lat=38.048&lon=-78.508")
         self.assertEqual(resp.status_code, 200)
         data = resp.json()
-        self.assertFalse(data["available"])
-        self.assertTrue(data.get("requires_token"))
-        self.assertIn("mapillary.com", data.get("mapillary_web_url", ""))
-        self.assertIn("google.com", data.get("gmaps_url", ""))
-
-        # 5. Mock Mapillary API response when token is provided
-        import unittest.mock
-        mock_payload = {
-            "data": [
-                {
-                    "id": "1234567890",
-                    "captured_at": 1698765432000,
-                    "compass_angle": 182.5,
-                    "thumb_1024_url": "https://images.mapillary.com/test_1024.jpg",
-                    "is_pano": True,
-                }
-            ]
-        }
-
-        class MockResp:
-            def read(self):
-                return json.dumps(mock_payload).encode("utf-8")
-            def __enter__(self):
-                return self
-            def __exit__(self, *args):
-                pass
-
-        with unittest.mock.patch("urllib.request.urlopen", return_value=MockResp()):
-            resp = self.client.get("/api/streetview?lat=38.048&lon=-78.508&token=MLY|test_token")
-            self.assertEqual(resp.status_code, 200)
-            data = resp.json()
-            self.assertTrue(data["available"])
-            self.assertEqual(data["image_id"], "1234567890")
-            self.assertEqual(data["compass_angle"], 182.5)
-            self.assertTrue(data["is_pano"])
-            self.assertEqual(data["thumb_url"], "https://images.mapillary.com/test_1024.jpg")
-            self.assertIn("1234567890", data["mapillary_web_url"])
+        self.assertTrue(data["available"])
+        self.assertIn("maps.google.com", data["embed_url"])
+        self.assertIn("google.com/maps/@", data["gmaps_url"])
+        self.assertEqual(data["lat"], 38.048)
+        self.assertEqual(data["lon"], -78.508)

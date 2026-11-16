@@ -491,8 +491,7 @@ def routes_view(request):
 def streetview_view(request):
     """GET /api/streetview?lat=...&lon=...
 
-    Looks up street-level imagery near coordinates via Mapillary API v4.
-    Returns imagery ID, thumbnail, capture date, compass angle, and external links.
+    Generates Google Maps Street View embeds and direct panorama links for coordinates.
     """
     raw_lat = request.GET.get("lat")
     raw_lon = request.GET.get("lon")
@@ -506,87 +505,22 @@ def streetview_view(request):
         return JsonResponse({"error": "lat and lon must be valid numbers."}, status=400)
 
     from django.conf import settings
-    import os
-    import urllib.request
-    import urllib.parse
+    api_key = getattr(settings, "GOOGLE_MAPS_API_KEY", "").strip()
 
-    token_param = request.GET.get("token") or request.headers.get("X-Mapillary-Token")
-    client_token = (
-        token_param
-        or getattr(settings, "MAPILLARY_CLIENT_TOKEN", "")
-        or os.environ.get("MAPILLARY_CLIENT_TOKEN", "")
-    ).strip()
+    if api_key:
+        embed_url = f"https://www.google.com/maps/embed/v1/streetview?key={api_key}&location={lat},{lon}"
+    else:
+        # Standard responsive street view panorama embed
+        embed_url = f"https://maps.google.com/maps?layer=c&cbll={lat},{lon}&cbp=12,0,0,0,0&output=svembed"
 
-    mapillary_web_url = f"https://www.mapillary.com/app/?lat={lat}&lng={lon}&z=17"
-    gmaps_url = f"https://www.google.com/maps/@?api=1&map_action=pano&viewpoint={lat},{lon}"
+    gmaps_pano_url = f"https://www.google.com/maps/@?api=1&map_action=pano&viewpoint={lat},{lon}"
+    gmaps_place_url = f"https://www.google.com/maps/search/?api=1&query={lat},{lon}"
 
-    if not client_token:
-        return JsonResponse({
-            "available": False,
-            "requires_token": True,
-            "message": "Enter your free Mapillary Client Token to enable embedded street view.",
-            "mapillary_web_url": mapillary_web_url,
-            "gmaps_url": gmaps_url,
-        })
-
-    delta = 0.0015  # ~150m bounding box
-    bbox_str = f"{lon - delta:.5f},{lat - delta:.5f},{lon + delta:.5f},{lat + delta:.5f}"
-    api_url = (
-        f"https://graph.mapillary.com/images?"
-        f"access_token={urllib.parse.quote(client_token)}&"
-        f"fields=id,computed_geometry,captured_at,thumb_1024_url,thumb_2048_url,compass_angle,is_pano&"
-        f"bbox={bbox_str}&limit=5"
-    )
-
-    try:
-        req = urllib.request.Request(api_url, headers={"User-Agent": "civilian-evacuation/0.1"})
-        with urllib.request.urlopen(req, timeout=6) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-
-        items = payload.get("data", [])
-        if not items:
-            return JsonResponse({
-                "available": False,
-                "message": "No street imagery found within 150m.",
-                "mapillary_web_url": mapillary_web_url,
-                "gmaps_url": gmaps_url,
-            })
-
-        img = items[0]
-        img_id = img.get("id")
-        captured_at = img.get("captured_at")
-        compass_angle = img.get("compass_angle")
-        thumb_url = img.get("thumb_1024_url") or img.get("thumb_2048_url")
-        is_pano = img.get("is_pano", False)
-
-        return JsonResponse({
-            "available": True,
-            "image_id": img_id,
-            "thumb_url": thumb_url,
-            "captured_at": captured_at,
-            "compass_angle": compass_angle,
-            "is_pano": is_pano,
-            "client_token": client_token,
-            "mapillary_web_url": f"https://www.mapillary.com/app/?pKey={img_id}",
-            "gmaps_url": gmaps_url,
-        })
-    except urllib.error.HTTPError as exc:
-        err_body = ""
-        try:
-            err_body = exc.read().decode("utf-8")
-        except Exception:
-            pass
-        return JsonResponse({
-            "available": False,
-            "error": f"Mapillary API error ({exc.code}): {err_body or exc.reason}",
-            "requires_token": exc.code in (401, 403),
-            "mapillary_web_url": mapillary_web_url,
-            "gmaps_url": gmaps_url,
-        }, status=exc.code if exc.code in (400, 401, 403) else 502)
-    except Exception as exc:
-        return JsonResponse({
-            "available": False,
-            "error": str(exc),
-            "mapillary_web_url": mapillary_web_url,
-            "gmaps_url": gmaps_url,
-        }, status=502)
+    return JsonResponse({
+        "available": True,
+        "embed_url": embed_url,
+        "gmaps_url": gmaps_pano_url,
+        "maps_search_url": gmaps_place_url,
+        "lat": lat,
+        "lon": lon,
+    })

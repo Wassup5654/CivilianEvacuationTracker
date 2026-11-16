@@ -4,8 +4,7 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{% static 'finder/map.css' %}?v=2.3">
-<link rel="stylesheet" href="https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.css">
+<link rel="stylesheet" href="{% static 'finder/map.css' %}?v=2.4">
 {% endblock %}
 
 {% block content %}
@@ -39,42 +38,30 @@
         <div id="map" class="evac-map" tabindex="0" aria-label="Evacuation map"></div>
 
         <!-- ── Street View Drawer ── -->
-        <div id="streetview-drawer" class="streetview-drawer" hidden aria-label="Street Level Imagery">
+        <div id="streetview-drawer" class="streetview-drawer" hidden aria-label="Google Street View">
           <div class="streetview-header">
             <div class="streetview-title-group">
               <span class="streetview-icon">📷</span>
               <div>
-                <strong id="streetview-title">Street-Level Imagery</strong>
-                <span id="streetview-subtitle" class="streetview-subtitle">Mapillary 360°</span>
+                <strong id="streetview-title">Google Street View</strong>
+                <span id="streetview-subtitle" class="streetview-subtitle">360° Panorama</span>
               </div>
             </div>
             <div class="streetview-actions">
-              <a id="streetview-link-mly" href="#" target="_blank" rel="noopener noreferrer" class="btn-tool" title="Open in Mapillary Web">↗ Mapillary</a>
-              <a id="streetview-link-gmaps" href="#" target="_blank" rel="noopener noreferrer" class="btn-tool" title="Open in Google Street View">↗ Google Maps</a>
-              <button type="button" id="streetview-token-btn" class="btn-tool" title="Configure Mapillary Token">⚙ Token</button>
+              <a id="streetview-link-gmaps" href="#" target="_blank" rel="noopener noreferrer" class="btn-tool" title="Open Fullscreen in Google Maps">↗ Google Maps</a>
               <button type="button" id="streetview-close-btn" class="btn-close" aria-label="Close street view">✕</button>
-            </div>
-          </div>
-
-          <!-- Token Configuration Prompt (collapsible) -->
-          <div id="streetview-token-box" class="streetview-token-box" hidden>
-            <p><strong>Mapillary Client Access Token</strong></p>
-            <p class="token-help">Enter your free token from <a href="https://www.mapillary.com/dashboard/developers" target="_blank" rel="noopener">mapillary.com/dashboard/developers</a> to activate the embedded 360° viewer:</p>
-            <div class="token-input-row">
-              <input type="text" id="streetview-token-input" placeholder="MLY|..." autocomplete="off">
-              <button type="button" id="streetview-save-token-btn">Save</button>
             </div>
           </div>
 
           <!-- Main Viewer Area -->
           <div class="streetview-body">
             <div id="streetview-status" class="streetview-status" hidden></div>
-            <div id="mly-container" class="mly-container"></div>
+            <iframe id="streetview-iframe" class="streetview-iframe" loading="lazy" allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
           </div>
 
           <!-- Disaster Warning Footer -->
           <div class="streetview-footer">
-            <span>⚠ Street imagery may predate recent disaster events. Cross-reference with Sentinel-2 damage overlays.</span>
+            <span>⚠ Street view imagery may predate recent disaster events. Cross-reference with Sentinel-2 damage overlays.</span>
           </div>
         </div>
       </div>
@@ -116,6 +103,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://unpkg.com/mapillary-js@4.1.2/dist/mapillary.js"></script>
-<script src="{% static 'finder/map.js' %}?v=2.3"></script>
+<script src="{% static 'finder/map.js' %}?v=2.4"></script>
 {% endblock %}

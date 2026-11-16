@@ -25,7 +25,6 @@
   let searchToken = 0;
   let fetchToken = 0;
   let debounceTimer = null;
-  let mlyViewer = null;
   let lastStreetViewQuery = null;
 
   // Layer groups
@@ -128,33 +127,8 @@
       closeSvBtn.onclick = function () {
         var drawer = document.getElementById("streetview-drawer");
         if (drawer) drawer.hidden = true;
-        destroyMlyViewer();
-      };
-    }
-
-    var tokenBtn = document.getElementById("streetview-token-btn");
-    var tokenBox = document.getElementById("streetview-token-box");
-    var tokenInput = document.getElementById("streetview-token-input");
-    var saveTokenBtn = document.getElementById("streetview-save-token-btn");
-
-    if (tokenBtn && tokenBox) {
-      tokenBtn.onclick = function () {
-        tokenBox.hidden = !tokenBox.hidden;
-        if (!tokenBox.hidden && tokenInput) {
-          tokenInput.value = getStoredMlyToken();
-          tokenInput.focus();
-        }
-      };
-    }
-
-    if (saveTokenBtn && tokenInput) {
-      saveTokenBtn.onclick = function () {
-        setStoredMlyToken(tokenInput.value);
-        if (tokenBox) tokenBox.hidden = true;
-        showToast("Mapillary token saved! Reloading street view...", 2500);
-        if (lastStreetViewQuery) {
-          openStreetView(lastStreetViewQuery.lat, lastStreetViewQuery.lon, lastStreetViewQuery.label);
-        }
+        var iframe = document.getElementById("streetview-iframe");
+        if (iframe) iframe.src = "about:blank";
       };
     }
   }
@@ -693,174 +667,51 @@
     return localStorage.getItem("mapillary_client_token") || "";
   }
 
-  function setStoredMlyToken(token) {
-    if (token) {
-      localStorage.setItem("mapillary_client_token", token.trim());
-    } else {
-      localStorage.removeItem("mapillary_client_token");
-    }
-  }
-
   function openStreetView(lat, lon, label) {
     lastStreetViewQuery = { lat: lat, lon: lon, label: label };
 
     var drawer = document.getElementById("streetview-drawer");
     var titleEl = document.getElementById("streetview-title");
     var subEl = document.getElementById("streetview-subtitle");
-    var linkMly = document.getElementById("streetview-link-mly");
     var linkGmaps = document.getElementById("streetview-link-gmaps");
     var statusEl = document.getElementById("streetview-status");
-    var container = document.getElementById("mly-container");
-    var tokenBox = document.getElementById("streetview-token-box");
+    var iframe = document.getElementById("streetview-iframe");
 
     if (!drawer) return;
 
     drawer.hidden = false;
-    titleEl.textContent = label ? ("Street View: " + label) : "Street-Level Imagery";
-    subEl.textContent = "Searching nearby imagery...";
-    statusEl.hidden = false;
-    statusEl.innerHTML = '<span class="spinner"></span> Locating closest street-level panorama...';
-
-    // Direct fallback external URLs
-    linkMly.href = "https://www.mapillary.com/app/?lat=" + lat + "&lng=" + lon + "&z=17";
-    linkGmaps.href = "https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=" + lat + "," + lon;
-
-    var clientToken = getStoredMlyToken();
-    var queryUrl = "/api/streetview?lat=" + encodeURIComponent(lat) + "&lon=" + encodeURIComponent(lon);
-    if (clientToken) {
-      queryUrl += "&token=" + encodeURIComponent(clientToken);
+    titleEl.textContent = label || "Google Street View";
+    subEl.textContent = "Loading 360° panorama…";
+    if (statusEl) {
+      statusEl.hidden = false;
+      statusEl.innerHTML = '<span class="spinner"></span> Connecting to Google Street View…';
     }
+
+    var defaultPanoUrl = "https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=" + lat + "," + lon;
+    if (linkGmaps) linkGmaps.href = defaultPanoUrl;
+
+    var queryUrl = "/api/streetview?lat=" + encodeURIComponent(lat) + "&lon=" + encodeURIComponent(lon);
 
     fetch(queryUrl, {
       headers: { "Accept": "application/json" }
     })
       .then(function (res) { return res.json(); })
       .then(function (data) {
-        if (data.mapillary_web_url) linkMly.href = data.mapillary_web_url;
-        if (data.gmaps_url) linkGmaps.href = data.gmaps_url;
+        if (data.gmaps_url && linkGmaps) linkGmaps.href = data.gmaps_url;
+        subEl.textContent = "360° Street Panorama";
+        if (statusEl) statusEl.hidden = true;
 
-        if (data.available && data.image_id) {
-          subEl.textContent = (data.is_pano ? "360° Panorama" : "Street Photo") +
-            (data.captured_at ? " • " + formatCaptureDate(data.captured_at) : "");
-          statusEl.hidden = true;
-
-          var activeToken = clientToken || data.client_token;
-          if (activeToken && window.mapillary && window.mapillary.Viewer) {
-            initMlyViewer(container, activeToken, data.image_id);
-          } else if (data.thumb_url) {
-            destroyMlyViewer();
-            container.innerHTML =
-              '<div class="mly-thumbnail-view">' +
-                '<img src="' + escapeHtml(data.thumb_url) + '" alt="Street View Preview" class="mly-preview-img">' +
-                '<div class="mly-token-prompt-overlay">' +
-                  '<p>Static preview loaded. Enter your free Mapillary token to activate interactive 360° navigation:</p>' +
-                  '<button type="button" class="btn-activate-mly" id="btn-show-token-box">Enter Free Token</button>' +
-                '</div>' +
-              '</div>';
-            var showBtn = document.getElementById("btn-show-token-box");
-            if (showBtn) {
-              showBtn.onclick = function () {
-                if (tokenBox) tokenBox.hidden = false;
-              };
-            }
-          } else {
-            destroyMlyViewer();
-            statusEl.hidden = false;
-            statusEl.innerHTML =
-              '<div class="mly-notice">' +
-                '<p>Photo found! Enter your free Mapillary token to enable the 360° viewer:</p>' +
-                '<button type="button" class="btn-activate-mly" id="btn-show-token-box-2">Enter Free Token</button>' +
-              '</div>';
-            var showBtn2 = document.getElementById("btn-show-token-box-2");
-            if (showBtn2) {
-              showBtn2.onclick = function () {
-                if (tokenBox) tokenBox.hidden = false;
-              };
-            }
-          }
-        } else {
-          destroyMlyViewer();
-          subEl.textContent = "No imagery nearby";
-          statusEl.hidden = false;
-          statusEl.innerHTML =
-            '<div class="mly-empty-notice">' +
-              '<p>📍 No street-level photo recorded within 150m of this coordinate.</p>' +
-              '<p class="small">Coverage is crowdsourced by community contributors.</p>' +
-              '<div class="mly-empty-links">' +
-                '<a href="' + escapeHtml(linkMly.href) + '" target="_blank" rel="noopener" class="btn-link">Check Mapillary Coverage Map ↗</a>' +
-                '<a href="' + escapeHtml(linkGmaps.href) + '" target="_blank" rel="noopener" class="btn-link">Check Google Street View ↗</a>' +
-              '</div>' +
-            '</div>';
-          container.innerHTML = "";
+        if (iframe && data.embed_url) {
+          iframe.src = data.embed_url;
         }
       })
       .catch(function (err) {
-        destroyMlyViewer();
-        subEl.textContent = "Connection error";
-        statusEl.hidden = false;
-        statusEl.innerHTML = '<p class="error-text">Failed to query street view imagery. You can still open the coordinate in external viewers above.</p>';
+        subEl.textContent = "Google Street View";
+        if (statusEl) statusEl.hidden = true;
+        if (iframe) {
+          iframe.src = "https://maps.google.com/maps?layer=c&cbll=" + lat + "," + lon + "&cbp=12,0,0,0,0&output=svembed";
+        }
       });
-  }
-
-  function initMlyViewer(container, token, imageId) {
-    try {
-      if (mlyViewer) {
-        mlyViewer.moveTo(imageId).catch(function () {
-          destroyMlyViewer();
-          createMlyViewer(container, token, imageId);
-        });
-      } else {
-        createMlyViewer(container, token, imageId);
-      }
-    } catch (e) {
-      console.warn("MapillaryJS error:", e);
-      destroyMlyViewer();
-      container.innerHTML = '<div class="mly-notice"><p>Could not initialize 360° WebGL viewer on this device.</p></div>';
-    }
-  }
-
-  function createMlyViewer(container, token, imageId) {
-    container.innerHTML = "";
-    var viewerDiv = document.createElement("div");
-    viewerDiv.id = "mly-inner";
-    viewerDiv.style.width = "100%";
-    viewerDiv.style.height = "100%";
-    container.appendChild(viewerDiv);
-
-    mlyViewer = new mapillary.Viewer({
-      accessToken: token,
-      container: "mly-inner",
-      imageId: imageId,
-      component: {
-        cover: false,
-        sequence: true,
-        direction: true,
-        zoom: true
-      }
-    });
-
-    window.addEventListener("resize", function () {
-      if (mlyViewer) mlyViewer.resize();
-    });
-  }
-
-  function destroyMlyViewer() {
-    if (mlyViewer) {
-      try {
-        mlyViewer.remove();
-      } catch (e) {}
-      mlyViewer = null;
-    }
-  }
-
-  function formatCaptureDate(val) {
-    if (!val) return "";
-    try {
-      var d = typeof val === "number" ? new Date(val) : new Date(val);
-      return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-    } catch (e) {
-      return String(val);
-    }
   }
 
   // ── HTML escape ──
