@@ -32,7 +32,7 @@ logger.setLevel(logging.INFO)
 
 ALPHA = getattr(settings, "ROUTE_DAMAGE_ALPHA", 5.0)
 BLOCK_THRESHOLD = getattr(settings, "ROUTE_BLOCK_THRESHOLD", 0.5)
-OVERLAP_MAX = getattr(settings, "ROUTE_OVERLAP_MAX", 0.70)
+OVERLAP_MAX = getattr(settings, "ROUTE_OVERLAP_MAX", 0.60)
 WALK_SPEED = getattr(settings, "ROUTE_WALK_SPEED_KMH", 5.0)
 DRIVE_SPEED = getattr(settings, "ROUTE_DRIVE_SPEED_KMH", 40.0)
 MAX_SHELTERS = getattr(settings, "ROUTE_MAX_SHELTERS", 10)
@@ -792,10 +792,10 @@ def _edge_set(path: list[int]) -> set[tuple[int, int]]:
 
 
 def _overlap_fraction(edges_a: set, edges_b: set) -> float:
-    """Fraction of edges_a that overlap with edges_b."""
-    if not edges_a:
+    """Edge overlap |A ∩ B| / min(|A|, |B|) between two routes' edge sets."""
+    if not edges_a or not edges_b:
         return 0.0
-    return len(edges_a & edges_b) / len(edges_a)
+    return len(edges_a & edges_b) / min(len(edges_a), len(edges_b))
 
 
 # ── Main routing ──

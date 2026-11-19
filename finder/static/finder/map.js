@@ -662,11 +662,7 @@
     }
   });
 
-  // ── Mapillary Street View Management ──
-  function getStoredMlyToken() {
-    return localStorage.getItem("mapillary_client_token") || "";
-  }
-
+  // ── Google Street View drawer ──
   function openStreetView(lat, lon, label) {
     lastStreetViewQuery = { lat: lat, lon: lon, label: label };
 

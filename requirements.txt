@@ -1,3 +1,7 @@
 Django>=6.1,<6.2
 Pillow>=10.0.0
 numpy>=1.24.0
+scipy>=1.11
+networkx>=3.2
+osmnx>=2.0
+shapely>=2.0

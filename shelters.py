@@ -252,8 +252,12 @@ def merge_shelters(
     return merged
 
 
-def _query_shelters_for_bbox(bb: tuple[float, float, float, float]) -> list[dict[str, Any]]:
-    """Internal helper to retrieve cached or live shelters for a bbox."""
+def _cached_osm_shelters(bb: tuple[float, float, float, float]) -> list[dict[str, Any]]:
+    """OSM shelters for a bbox, using the memory/disk cache.
+
+    Only non-empty results are cached, so a transient Overpass/OSM outage
+    (which also yields an empty list) is never persisted as "no shelters".
+    """
     key = tuple(round(v, 2) for v in bb)
     now = time.time()
     cached = _shelter_cache.get(key)
@@ -264,22 +268,25 @@ def _query_shelters_for_bbox(bb: tuple[float, float, float, float]) -> list[dict
     if disk_file.exists():
         try:
             data = json.loads(disk_file.read_text(encoding="utf-8"))
-            _shelter_cache[key] = (now, data)
-            return data
+            if data:
+                _shelter_cache[key] = (now, data)
+                return data
         except Exception:
             pass
 
     osm = query_osm_shelters(bb)
-    db = get_db_shelters(bb)
-    merged = merge_shelters(osm, db)
+    if osm:
+        _shelter_cache[key] = (now, osm)
+        try:
+            disk_file.write_text(json.dumps(osm), encoding="utf-8")
+        except Exception:
+            pass
+    return osm
 
-    _shelter_cache[key] = (now, merged)
-    try:
-        disk_file.write_text(json.dumps(merged), encoding="utf-8")
-    except Exception:
-        pass
 
-    return merged
+def _query_shelters_for_bbox(bb: tuple[float, float, float, float]) -> list[dict[str, Any]]:
+    """OSM shelters (cached) merged with admin-registered DB shelters (always fresh)."""
+    return merge_shelters(_cached_osm_shelters(bb), get_db_shelters(bb))
 
 
 def find_shelters(

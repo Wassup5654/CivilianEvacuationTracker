@@ -1,6 +1,6 @@
 # 🛰️ Civilian Evacuation Assistant & Sentinel Disaster Routing Platform
 
-[![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.12%20%7C%203.13-blue.svg)](https://www.python.org/)
 [![Django](https://img.shields.io/badge/Django-6.1-green.svg)](https://www.djangoproject.com/)
 [![Leaflet](https://img.shields.io/badge/Leaflet-1.9.4-brightgreen.svg)](https://leafletjs.com/)
 [![OSM](https://img.shields.io/badge/OpenStreetMap-Overpass%20%2B%20Core%20API-orange.svg)](https://www.openstreetmap.org/)
@@ -51,7 +51,7 @@ The platform synthesizes **real-time Sentinel-2 multispectral satellite imagery*
 - **Multi-Route Diversity**: Generates up to 3 distinct topological alternatives so that if one arterial avenue becomes compromised in an emergency, evacuees have pre-calculated alternates.
 - **Fail-Safe Offline/Resilient Ingestion**: 3-tier road harvesting engine with automatic fallback from Overpass API mirrors to recursive 2×2 Core OpenStreetMap chunked downloads.
 - **Static 5 km Satellite Corridor Mode**: Generates 10-meter-per-pixel annotated Sentinel-2 imagery with scale bars, impassable alerts, and civilian next-steps instructions.
-- **Street-Level Imagery with Dual-Layer Fallback**: Integrated on-demand street view powered by Mapillary Graph API v4 and MapillaryJS. Offers embedded 360° navigation of destination shelters, intersections, and waypoints with seamless, automatic fallback links to Google Street View and Mapillary Web—guaranteeing visual coverage even when crowd-sourced photos are unavailable in a specific sector.
+- **Street-Level Imagery**: On-demand Google Street View for any shelter or route destination, embedded in a sliding drawer, with a one-click link to the fullscreen panorama in Google Maps. No client-side API token is required.
 - **Privacy-by-Design**: Absolute zero database storage of searched addresses or GPS coordinates.
 
 ---
@@ -127,20 +127,19 @@ The core pathfinding engine ([`evacuation_engine.py`](evacuation_engine.py)) ope
 Public Overpass API servers often experience rate limits or HTTP 502/504 errors during major events. The engine implements a 3-tier fallback architecture:
 1. **Primary & Secondary Overpass Mirrors**: Queries `overpass-api.de`, `lz4.overpass-api.de`, and `z.overpass-api.de` with strict timeouts.
 2. **OSM Core API 0.6 Fallback**: If Overpass fails, queries `api.openstreetmap.org/api/0.6/map`.
-3. **Recursive 2×2 Tile Chunking**: To prevent OpenStreetMap's 50,000-node request ceiling, bounding boxes exceeding threshold dimensions are split recursively into 2×2 sub-tiles, downloaded concurrently, and unified with `nx.compose_all`.
+3. **Recursive 2×2 Tile Chunking**: To prevent OpenStreetMap's 50,000-node request ceiling, bounding boxes exceeding threshold dimensions are (or rejected with HTTP 400) are split recursively into 2×2 sub-tiles, downloaded one after another, and unified with `nx.compose_all`.
 
 ### 2. Reverse-Reachability & Stranded Node Detection
 Evacuation safety requires identifying pockets of the city that have been cut off from shelters by disaster rubble or flooding:
 
 ```math
-\text{Reachable}_{\text{intact}} = \bigcup_{s \in S} \text{ConnectedComponent}(G_{\text{undirected}}, s)
-```
-```math
 \text{Reachable}_{\text{damaged}} = \bigcup_{s \in S} \text{ConnectedComponent}((G \setminus E_{\text{blocked}})_{\text{undirected}}, s)
 ```
 ```math
-\text{Stranded} = \text{Reachable}_{\text{intact}} \setminus \text{Reachable}_{\text{damaged}}
+\text{Stranded} = V \setminus \text{Reachable}_{\text{damaged}}
 ```
+
+A node is stranded if it cannot reach any shelter once blocked edges are removed, whether damage cut it off or it was never connected to a shelter.
 
 *If no shelters are registered in the bounding box (S = ∅), the engine safely returns ∅ to prevent visual degradation of the map.*
 
@@ -167,11 +166,11 @@ Shelter discovery ([`shelters.py`](shelters.py)) combines live OpenStreetMap dat
 - **Tag Extraction**: Parses `emergency=assembly_point`, `social_facility=shelter`, `building=bunker`, `shelter_type=*`, `operator=*`, and `addr:street=*`.
 - **Graph BFS Street Snapping**: When an OSM shelter lacks a formal name, the engine runs a breadth-first search on incident road edges in G to enrich the name (e.g. converting a bare `"Shelter"` tag into **`"Shelter on Seymour Road"`** or **`"Transit Shelter on Library Plaza"`**).
 
-### 6. Ground-Level Verification & Dual-Layer Street View
+### 6. Ground-Level Verification with Google Street View
 To help civilians and aid workers visually verify safe corridors and shelter access points before moving:
-- **Embedded 360° Panoramas**: Uses MapillaryJS to render interactive street-level panoramas directly inside a sliding dashboard drawer.
-- **Dual-Layer Coverage Fallback**: When community crowd-sourced imagery is missing or sparse in a specific sector, the platform automatically provides direct deep-links to **Google Street View** and **Mapillary Web** pinned to the exact coordinates, eliminating dead ends in visual inspection.
-- **Pre-Disaster Context vs. Post-Disaster Satellite Overlay**: Street view imagery establishes structural baselines (building heights, road widths, entrance gates), which are cross-referenced with Sentinel-2 xBD damage masks to assess real-time passability.
+- **Embedded 360° Panoramas**: Shelter popups and route cards have a **Street View** button that opens a Google Street View panorama in a sliding dashboard drawer (via `/api/streetview`).
+- **Fullscreen Link**: The drawer always includes a direct link to the fullscreen Google Maps panorama pinned to the exact coordinates.
+- **Pre-Disaster Context**: Street-level imagery may predate the disaster, so the drawer reminds users to cross-reference it with the Sentinel-2 damage overlay.
 
 ---
 
@@ -179,18 +178,17 @@ To help civilians and aid workers visually verify safe corridors and shelter acc
 
 ### Dual-Temporal Change Detection
 The platform queries Sentinel-2 Level-2A surface reflectance data through Microsoft Planetary Computer STAC:
-- **Band Ingestion**: Blue (B02), Green (B03), Red (B04), Near-Infrared (B08), and Short-Wave Infrared (B11, B12) at native 10m/20m spatial resolutions.
-- **Cloud Filtering**: Rejects scenes with cloud obscuration >20%.
-- **Spectral Index Differencing**: Computes Normalized Difference Vegetation Index (NDVI), Normalized Difference Water Index (NDWI), and Normalized Burn Ratio (NBR):
-  ```math
-  \Delta \text{NBR} = \left(\frac{B08 - B12}{B08 + B12}\right)_{\text{pre}} - \left(\frac{B08 - B12}{B08 + B12}\right)_{\text{post}}
-  ```
-- **Morphological Polygonization**: Significant change blobs are vectorized via OpenCV/Shapely and converted to GeoJSON via raster affine transformations.
+- **Imagery**: The 10 m true-color `visual` asset (B04/B03/B02) for a 5 km square, saved for the latest clear scene and one earlier clear scene.
+- **Cloud Filtering**: Rejects scenes with cloud cover ≥ 20%.
+- **Bitemporal Change Probability** (default `DAMAGE_BACKEND = "heuristic"`): Per-pixel probability from the normalized RGB difference, luminance difference, and high-frequency texture change between the two dates. When no earlier scene exists, single-image rubble and standing-water heuristics are used.
+- **Morphological Polygonization**: Probability maps are thresholded, cleaned with morphological close/open (SciPy), vectorized with Shapely, and converted to GeoJSON via the raster affine transform.
 
 ### Deep Learning Backends (xBD Benchmark)
-For high-fidelity damage categorization, the system supports PyTorch models trained on the xBD disaster dataset ([`xbd_s12_damage.py`](xbd_s12_damage.py)):
+For building-level damage, the system optionally supports the prs-eth xBD-S12 model ([`xbd_s12_damage.py`](xbd_s12_damage.py)), enabled with `DAMAGE_BACKEND = "xbd_s12"`. It requires the prs-eth/xbd-s12 package, PyTorch, rasterio, and aligned pre/post Sentinel-1 + Sentinel-2 inputs at ~4 m spacing:
 - **Damage Severity Scale**: Classifies buildings into *No Damage*, *Minor Damage*, *Major Damage*, and *Destroyed*.
-- **Selective Road Obstruction**: Building footprints classified as *Major* or *Destroyed* that intersect road network corridors inflate the edge traversal cost by 10× or mark the edge as completely blocked.
+- **Display only**: Damaged-building polygons are shown on the map but are **not** used to block roads, because building damage is not evidence that a road is impassable.
+
+**How damage affects routing** (heuristic backend): each edge costs `length × (1 + 5 × damage_fraction)`, where `damage_fraction` is the share of the edge inside damage polygons. Edges that are ≥ 50% damaged, tagged `highway=construction`, or tagged `access=no` are blocked entirely.
 
 ---
 
@@ -299,15 +297,15 @@ Provides street-level ground truth preview for any shelter or route waypoint via
 ## 🛠️ Getting Started
 
 ### Prerequisites
-- **Python**: 3.11, 3.12, or 3.13
+- **Python**: 3.12 or 3.13 (Django 6.1 requires Python 3.12+)
 - **GDAL / GEOS / PROJ**: Standard geospatial C-libraries (pre-bundled with standard wheels on Windows/macOS; install `libgdal-dev` on Linux).
 
 ### Local Installation
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/Wassup5654/civilian-evacuation.git
-   cd civilian-evacuation
+   git clone https://github.com/Wassup5654/CivilianEvacuationTracker.git
+   cd CivilianEvacuationTracker
    ```
 
 2. **Create and activate a virtual environment**:
@@ -323,7 +321,8 @@ Provides street-level ground truth preview for any shelter or route waypoint via
    ```bash
    pip install --upgrade pip
    pip install -r requirements.txt
-   pip install networkx osmnx shapely rasterio requests scipy
+   # Optional, only for the xbd_s12 damage backend:
+   # pip install rasterio torch
    ```
 
 4. **Initialize the database**:
@@ -343,6 +342,7 @@ Provides street-level ground truth preview for any shelter or route waypoint via
 docker build -t civilian-evacuation .
 docker run -p 8000:8000 civilian-evacuation
 ```
+The container applies database migrations on start. Open [http://localhost:8000/register/](http://localhost:8000/register/) to create an account.
 
 ---
 
@@ -351,10 +351,10 @@ docker run -p 8000:8000 civilian-evacuation
 The codebase includes exhaustive test suites covering graph routing, reachability algorithms, ML classifiers, and API endpoints:
 
 ```bash
-# Run Django integration & security tests (31 tests)
+# Run Django integration & security tests (32 tests)
 python manage.py test
 
-# Run Evacuation Engine synthetic graph unit tests (16 tests)
+# Run Evacuation Engine synthetic graph unit tests (17 tests)
 python test_evacuation_engine.py
 
 # Run Damage detection & ML backend tests (4 tests)

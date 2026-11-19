@@ -144,7 +144,7 @@ DAMAGE_MIN_AREA_PX = 16  # 16 px = 1600 m^2 at 10 m native Sentinel-2 resolution
 # Routing Engine Configuration
 ROUTE_DAMAGE_ALPHA = 5.0            # cost multiplier for damage fraction
 ROUTE_BLOCK_THRESHOLD = 0.5         # fraction of edge in damage -> fully blocked
-ROUTE_OVERLAP_MAX = 0.70            # drop route if >70% edge overlap with chosen
+ROUTE_OVERLAP_MAX = 0.60            # drop route if >60% edge overlap (|A∩B|/min) with chosen
 ROUTE_WALK_SPEED_KMH = 5.0
 ROUTE_DRIVE_SPEED_KMH = 40.0
 ROUTE_MAX_SHELTERS = 10             # cheapest reachable shelters to consider

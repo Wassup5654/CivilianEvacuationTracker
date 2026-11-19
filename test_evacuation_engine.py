@@ -208,6 +208,13 @@ class TestDiversityFiltering(unittest.TestCase):
         # Only edge (0,1) is shared → 1/3 ≈ 0.333
         self.assertAlmostEqual(overlap, 1.0 / 3.0, places=2)
 
+    def test_overlap_uses_shorter_route_as_denominator(self):
+        """Overlap = |A ∩ B| / min(|A|, |B|), symmetric in A and B."""
+        es_short = _edge_set([0, 1, 2])           # 2 edges
+        es_long = _edge_set([0, 1, 2, 3, 4, 5])   # 5 edges, contains the short route
+        self.assertAlmostEqual(_overlap_fraction(es_short, es_long), 1.0)
+        self.assertAlmostEqual(_overlap_fraction(es_long, es_short), 1.0)
+
 
 class TestFewerThanThree(unittest.TestCase):
     """Test that the engine handles fewer than 3 valid routes."""
