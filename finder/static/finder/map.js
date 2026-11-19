@@ -31,7 +31,8 @@
   // Layer groups
   // deadEndLayer holds two sub-groups so the parallel context/routes fetches
   // never clear each other's features.
-  let damageLayer, deadEndLayer, strandedLayer, routeDeadEndLayer, shelterLayer, routeLayers;
+  let damageLayer, deadEndLayer, strandedLayer, routeDeadEndLayer, shelterLayer, routeLayers, suggestLayer;
+  let suggestToken = 0;
 
   // ── DOM refs ──
   const form        = document.getElementById("lookup");
@@ -114,6 +115,7 @@
     routeDeadEndLayer = L.layerGroup().addTo(deadEndLayer);
     shelterLayer = L.layerGroup().addTo(map);
     routeLayers  = L.layerGroup().addTo(map);
+    suggestLayer = L.layerGroup().addTo(map);
 
     // Wire up layer toggles
     wireToggle("toggle-damage", damageLayer);
@@ -318,6 +320,9 @@
         }
       });
 
+    // Suggested shelter sites follow the zone while the box is ticked
+    if (suggestBox && suggestBox.checked) fetchSuggestions();
+
     // 2. Fetch context layers (damage, shelters, dead ends) independently
     fetch("/api/context?bbox=" + encodeURIComponent(bboxStr) + "&mode=" + currentMode)
       .then(function (resp) {
@@ -442,6 +447,103 @@
     }
   }
 
+  // ── Relief planning: suggested shelter sites (never routing destinations) ──
+  var suggestBox = document.getElementById("toggle-suggest");
+  var suggestCount = document.getElementById("suggest-count");
+  var suggestResults = document.getElementById("suggest-results");
+
+  function clearSuggestions() {
+    suggestToken++;
+    if (suggestLayer) suggestLayer.clearLayers();
+    if (suggestResults) suggestResults.innerHTML = "";
+  }
+
+  function fetchSuggestions() {
+    var bbox = getZoneBbox();
+    if (!bbox || !suggestResults) return;
+    var token = ++suggestToken;
+    suggestLayer.clearLayers();
+    suggestResults.innerHTML = '<div class="panel-loading"><span class="spinner"></span> Finding the best places for new shelters…</div>';
+    fetch("/api/suggest-shelters?bbox=" + encodeURIComponent(bbox.join(",")) +
+          "&count=" + encodeURIComponent(suggestCount ? suggestCount.value : 3))
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+      .then(function (res) {
+        if (token !== suggestToken) return;
+        if (!res.ok) {
+          suggestResults.textContent = res.data.error || "Could not compute suggestions.";
+          return;
+        }
+        renderSuggestions(res.data);
+      })
+      .catch(function () {
+        if (token === suggestToken) suggestResults.textContent = "Could not reach the suggestion service.";
+      });
+  }
+
+  function renderSuggestions(data) {
+    suggestLayer.clearLayers();
+    var sites = data.sites || [];
+    var cov = data.coverage || {};
+    var html = "";
+    if (cov.with_suggestions_pct !== undefined) {
+      html += '<div class="suggest-summary">' +
+        (cov.existing_shelters
+          ? "Existing shelters reach <strong>" + cov.existing_shelters_pct + "%</strong> of this zone's built-up area within a 10-minute walk. "
+          : "No existing shelters in this zone. ") +
+        (sites.length
+          ? "With " + sites.length + " suggested site" + (sites.length > 1 ? "s" : "") +
+            ": <strong>" + cov.with_suggestions_pct + "%</strong>."
+          : "") +
+        "</div>";
+    }
+    sites.forEach(function (s) {
+      if (s.catchment) {
+        L.geoJSON(s.catchment, {
+          style: { color: "#0D9488", weight: 1.5, dashArray: "4 4", fillColor: "#0D9488", fillOpacity: 0.07 },
+          interactive: false
+        }).addTo(suggestLayer);
+      }
+      var marker = L.marker([s.lat, s.lon], {
+        icon: L.divIcon({ className: "suggest-marker", html: String(s.rank), iconSize: [26, 26], iconAnchor: [13, 13] }),
+        title: s.name
+      });
+      var detail =
+        "Adds <strong>" + s.adds_coverage_pct + "%</strong> of the zone's built-up area within a 10-minute walk" +
+        (s.damaged_area_share_pct > 0 ? " (" + s.damaged_area_share_pct + "% of it in damaged areas)" : "") + ".<br>" +
+        (s.nearest_damage_m !== null ? "Nearest known damage: " + s.nearest_damage_m + " m." : "No known damage nearby.");
+      marker.bindPopup(
+        '<div class="shelter-popup"><strong>' + escapeHtml(s.name) + "</strong>" +
+        '<span class="shelter-type">Suggestion, not an established shelter</span>' +
+        "<div>" + detail + "</div>" +
+        '<div class="shelter-popup-actions"><button type="button" class="btn-sv-trigger btn-sv-popup" data-lat="' + s.lat +
+        '" data-lon="' + s.lon + '" data-name="' + escapeHtml(s.name) + '">📷 Street View</button></div></div>'
+      );
+      marker.addTo(suggestLayer);
+      html += '<div class="suggest-site" data-lat="' + s.lat + '" data-lon="' + s.lon + '"><strong>' + s.rank + ". " +
+        escapeHtml(s.street || "Unnamed road") + "</strong> · +" + s.adds_coverage_pct + "% coverage" +
+        (s.damaged_area_share_pct > 0 ? ", " + s.damaged_area_share_pct + "% damaged-area demand" : "") + "</div>";
+    });
+    (data.notes || []).forEach(function (n) { html += '<div class="suggest-basis">' + escapeHtml(n) + "</div>"; });
+    if (data.basis) html += '<div class="suggest-basis">' + escapeHtml(data.basis) + "</div>";
+    suggestResults.innerHTML = html;
+    suggestResults.querySelectorAll(".suggest-site").forEach(function (el) {
+      el.addEventListener("click", function () {
+        map.setView([parseFloat(el.getAttribute("data-lat")), parseFloat(el.getAttribute("data-lon"))], 17);
+      });
+    });
+  }
+
+  if (suggestBox) {
+    suggestBox.addEventListener("change", function () {
+      if (suggestBox.checked) fetchSuggestions(); else clearSuggestions();
+    });
+  }
+  if (suggestCount) {
+    suggestCount.addEventListener("change", function () {
+      if (suggestBox && suggestBox.checked) fetchSuggestions();
+    });
+  }
+
   // ── Radar estimates computing in the background: refresh until they're ready ──
   var radarTimer = null, radarRetries = 0;
   function scheduleRadarRefresh(pending, token) {
@@ -513,7 +615,8 @@
     if (routes.length === 0) {
       routeCards.innerHTML = '<p class="panel-placeholder">' +
         escapeHtml(data.warnings && data.warnings.length ? data.warnings[0] : "No valid routes found.") +
-        '</p>';
+        '</p><p class="panel-placeholder">Relief worker? Tick <strong>Show suggested shelters</strong> under ' +
+        'Relief planning to see where new shelters would reach the most people.</p>';
       return;
     }
 

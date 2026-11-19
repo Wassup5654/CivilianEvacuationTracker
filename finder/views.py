@@ -532,6 +532,58 @@ def routes_view(request):
 
 
 @login_required
+def suggest_shelters_view(request):
+    """GET /api/suggest-shelters?bbox=w,s,e,n&count=3
+
+    Where relief workers could set up new shelters to put the most built-up
+    area within a 10-minute walk, avoiding damage. Planning aid only: these
+    sites are never used as routing destinations.
+    """
+    try:
+        parts = [float(x.strip()) for x in request.GET.get("bbox", "").split(",")]
+        if len(parts) != 4:
+            raise ValueError
+        bbox = tuple(parts)
+    except (ValueError, AttributeError):
+        return JsonResponse({"error": "bbox must be west,south,east,north"}, status=400)
+    try:
+        count = max(1, min(int(request.GET.get("count", 3)), 8))
+    except ValueError:
+        count = 3
+
+    from evacuation_engine import assign_edge_costs, get_cached_graph
+    from shelter_suggest import built_up_mask, suggest_sites
+    from shelters import find_shelters
+
+    try:
+        G = get_cached_graph(bbox, "walk")
+    except Exception as exc:
+        return JsonResponse({"error": "Area too large or map servers busy. Try a smaller area.",
+                             "details": str(exc)}, status=502)
+    try:
+        built = built_up_mask(bbox)
+    except Exception as exc:
+        return JsonResponse({"error": f"Built-up area map unavailable: {exc}"}, status=502)
+
+    damage = _get_damage_for_bbox(bbox)
+    assign_edge_costs(G, damage["geo_polygons"], damage["road_grades"])
+    try:
+        existing, _ = find_shelters(bbox, auto_expand_km=0)
+    except Exception:
+        existing = []
+
+    result = suggest_sites(G, bbox, built, damage["features"], existing, k=count)
+    result["notes"] = result.get("notes", []) + damage["notes"]
+    result["radar_pending"] = damage["radar_pending"]
+    result["basis"] = (
+        "Demand is estimated from built-up area (ESA WorldCover 2021), not a population count; "
+        "damaged areas count double. Sites avoid known damage by 150 m and are reachable on foot. "
+        "Verify safety, ownership and access on the ground before use."
+    )
+    return JsonResponse(result)
+
+
+@login_required
 def streetview_view(request):
     """GET /api/streetview?lat=...&lon=...
 

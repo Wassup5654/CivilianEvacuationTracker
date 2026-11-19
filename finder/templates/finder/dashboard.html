@@ -4,7 +4,7 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{% static 'finder/map.css' %}?v=2.4">
+<link rel="stylesheet" href="{% static 'finder/map.css' %}?v=2.5">
 {% endblock %}
 
 {% block content %}
@@ -80,6 +80,20 @@
           <label><input type="checkbox" id="toggle-routes" checked> Routes</label>
         </fieldset>
 
+        <!-- Relief planning: suggested new shelter sites -->
+        <fieldset class="layer-toggles relief-planning">
+          <legend>Relief planning</legend>
+          <label><input type="checkbox" id="toggle-suggest"> Show suggested shelters</label>
+          <label class="suggest-count-label">Sites
+            <select id="suggest-count" aria-label="Number of suggested sites">
+              <option value="3" selected>3</option>
+              <option value="5">5</option>
+              <option value="8">8</option>
+            </select>
+          </label>
+          <div id="suggest-results" class="suggest-results" aria-live="polite"></div>
+        </fieldset>
+
         <!-- Legend -->
         <div class="map-legend">
           <h3>Legend</h3>
@@ -92,6 +106,7 @@
           <div class="legend-row"><span class="swatch route-swatch" style="background:#7C3AED"></span> Route 2</div>
           <div class="legend-row"><span class="swatch route-swatch" style="background:#EA580C"></span> Route 3</div>
           <div class="legend-row"><span class="swatch" style="background:#22C55E"></span> Shelter</div>
+          <div class="legend-row"><span class="swatch" style="background:#0D9488;opacity:0.6;border-style:dashed"></span> Suggested shelter site (planning)</div>
           <div class="legend-row"><span class="swatch" style="background:#6B7280;border-style:dashed"></span> Dead end / stranded</div>
           <div class="legend-row"><span class="swatch" style="background:#2563EB;opacity:0.3"></span> Evacuation zone</div>
         </div>
@@ -107,5 +122,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'finder/map.js' %}?v=2.8"></script>
+<script src="{% static 'finder/map.js' %}?v=2.9"></script>
 {% endblock %}

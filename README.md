@@ -30,6 +30,7 @@ The platform combines **official damage assessments from Copernicus EMS and UNOS
   - [5. Automated Shelter Discovery & Street Enrichment](#5-automated-shelter-discovery--street-enrichment)
 - [Official Damage Assessments](#-official-damage-assessments)
 - [Radar Damage Estimates for War Zones](#-radar-damage-estimates-for-war-zones)
+- [Suggested Shelter Sites (Relief Planning)](#-suggested-shelter-sites-relief-planning)
 - [Satellite Imagery & Damage Detection (legacy)](#%EF%B8%8F-satellite-imagery--damage-detection-legacy-off-by-default)
   - [Dual-Temporal Change Detection](#dual-temporal-change-detection)
   - [Deep Learning Backends (xBD Benchmark)](#deep-learning-backends-xbd-benchmark)
@@ -49,6 +50,7 @@ The platform combines **official damage assessments from Copernicus EMS and UNOS
 
 - **Interactive Dynamic Evacuation Map**: Real-time Leaflet dashboard displaying base street maps, high-resolution satellite imagery layers, damage polygons, cul-de-sac hazard markers, and verified shelter pins.
 - **Graph-Snapping & Street Name Resolution**: Automatically resolves unnamed footpaths and transit huts into human-readable locations (e.g., *"Transit Shelter on Seymour Road"*, *"Shelter on Washington Street"*).
+- **Suggested Shelter Sites**: For relief workers in areas with no shelters, suggests where new shelters would put the most built-up area within a 10-minute walk while staying clear of damage.
 - **Official Damage Data**: Pulls graded damage from Copernicus EMS automatically and imports UNOSAT assessments, and says plainly when no assessment covers an area.
 - **Damage-Weighted Pathfinding**: Computes walk and drive routes that avoid officially destroyed roads, penalize damaged ones, and warn about damaged buildings along the way.
 - **Multi-Route Diversity**: Generates up to 3 distinct topological alternatives so that if one arterial avenue becomes compromised in an emergency, evacuees have pre-calculated alternates.
@@ -265,6 +267,22 @@ The model's metrics, thresholds and training sites are stored next to it in `mod
 
 ---
 
+## ⛺ Suggested Shelter Sites (Relief Planning)
+
+Many affected areas have no mapped shelters, so no routes can be drawn. For relief workers deciding **where to set up new shelters**, tick **Relief planning → Show suggested shelters** (choose 3, 5 or 8 sites). [`shelter_suggest.py`](shelter_suggest.py) solves a **maximum-coverage facility-location** problem on the walking network:
+
+- **Demand:** built-up area from ESA WorldCover 2021 in 50 m cells, as a proxy for where people live. It is *not* a population count, so results are reported as a share of the zone's built-up area. Cells inside damaged areas (official or radar-estimated) count double, because people whose homes are damaged need shelter most.
+- **Candidate sites:** road-network points (so supplies can reach them) at least 150 m from any known damage and on the zone's main connected network, one per 100 m cell.
+- **Coverage:** a cell is covered if it is within a **10-minute walk (800 m) along walkable roads**, avoiding blocked roads, including the walk from the cell to its nearest road.
+- **Existing shelters** count as already covering their surroundings, so suggestions fill the gaps.
+- **Selection:** greedy maximum coverage (best site, then the best for what remains, and so on), which is provably within 63% (1 − 1/e) of optimal; it stops early once a site would add less than 1%.
+
+The panel shows how much of the zone existing shelters reach versus with the suggested sites, and each numbered marker shows its catchment, the coverage it adds, how much of that is in damaged areas, and the distance to the nearest known damage. Example results: **Irpin**, with no mapped shelters, goes from 0% to 92.5% with 3 sites; **Virginia Tech**, already 97.6% covered, gains only about 1% per extra site.
+
+Suggested sites are **planning aids, never routing destinations**: they are labelled *"Suggestion, not an established shelter"* so civilians can't mistake them for real shelters. Verify safety, ownership and access on the ground before use.
+
+---
+
 ## 🛰️ Satellite Imagery & Damage Detection (legacy, off by default)
 
 > These Sentinel-2 estimates are **not used for the map or routing** unless `SATELLITE_DAMAGE_IN_ROUTING = True`. At 10 m per pixel, true-colour change detection cannot tell damage from clouds, haze or lighting. They remain available through `/api/damage` and `/api/annotate`.
@@ -387,7 +405,13 @@ GET /api/annotate?lat=50.4501&lon=30.5234
 ```
 Returns 512x512 PNG imagery with a 10m/pixel scale bar, flood and structural damage overlays, and civilian safety advisories.
 
-### 4. Street-Level Imagery API
+### 4. Suggested Shelter Sites API
+```http
+GET /api/suggest-shelters?bbox={west},{south},{east},{north}&count=3
+```
+Returns up to `count` (1–8) suggested sites, each with `lat`, `lon`, `street`, `adds_coverage_pct`, `damaged_area_share_pct`, `nearest_damage_m` and a `catchment` polygon, plus `coverage.existing_shelters_pct`, `coverage.with_suggestions_pct`, `notes` and the method `basis`.
+
+### 5. Street-Level Imagery API
 ```http
 GET /api/streetview?lat=38.04815&lon=-78.50815
 ```
@@ -455,10 +479,10 @@ The container applies database migrations on start. Open [http://localhost:8000/
 The codebase includes exhaustive test suites covering graph routing, reachability algorithms, ML classifiers, and API endpoints:
 
 ```bash
-# Run Django integration, engine, official-damage & radar tests (76 tests)
+# Run Django integration, engine, official-damage, radar & shelter-suggestion tests (87 tests)
 python manage.py test
 
-# Run Evacuation Engine synthetic graph unit tests (24 tests)
+# Run Evacuation Engine synthetic graph unit tests (25 tests)
 python test_evacuation_engine.py
 
 # Run Damage detection & ML backend tests (4 tests)
@@ -470,6 +494,7 @@ python test_damage.py
 - **Route Dead Ends**: Only spurs branching off a chosen route are marked, and a dead end never shares a node, edge, or drawn geometry with a route.
 - **Reachability Inversion**: Verifies disconnected nodes and damage-cut components are flagged without producing false positives on undamaged maps.
 - **Official Damage**: Grade normalisation (Copernicus wording, UNOSAT codes), file import (reprojected UNOSAT grids, railway filtering), Copernicus lookup with caching and outage handling, destroyed roads blocking routes, and building/area warnings that never reroute.
+- **Suggested Shelters**: built-up demand cells, greedy maximum coverage, existing shelters filling their area first, keeping 150 m from damage, blocked roads, and that suggestions are never returned as routes.
 - **Radar Estimates**: the shipped model loads and matches the app's features, fallbacks (tuned statistic, then t-test), change detection, zone-wide shift removal, built-up masking, the systematic-noise cutoff, both layers' date windows, region matching, caching, background computation, and a guarantee that estimates never affect routing.
 - **Route Diversity**: Enforces mathematical Jaccard edge-overlap bounds.
 - **OSM Fallbacks**: Validates recursive 2×2 chunking when Overpass mirrors fail or rate limit.

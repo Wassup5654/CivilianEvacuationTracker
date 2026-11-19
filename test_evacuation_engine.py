@@ -366,6 +366,24 @@ class TestFewerThanThree(unittest.TestCase):
         self.assertLessEqual(len(result["routes"]), 3)
         self.assertGreaterEqual(len(result["routes"]), 1)
 
+    def test_start_on_shelter_node_gives_no_duplicate_routes(self):
+        """Start snapped onto the shelter's node: one zero-length route, not copies of it."""
+        G = _make_grid_graph(3, 3)
+        shelters = [{"name": "S1", "lat": 0.0, "lon": 0.0, "type": "shelter"}]
+        import unittest.mock
+        calls = {"n": 0}
+
+        def mock_nearest(G, X, Y):
+            calls["n"] += 1
+            return 0 if calls["n"] == 1 else [0]
+
+        with unittest.mock.patch("osmnx.nearest_nodes", side_effect=mock_nearest):
+            result = compute_routes(G, 0.0, 0.0, shelters, "walk", [])
+        keys = [(r["shelter"]["name"], r["distance_m"], tuple(map(tuple, r["geojson"]["geometry"]["coordinates"])))
+                for r in result["routes"]]
+        self.assertEqual(len(keys), len(set(keys)))
+        self.assertEqual(len(result["routes"]), 1)
+
     def test_no_shelter_returns_warning(self):
         """No shelters should return empty routes with a warning."""
         G = _make_grid_graph(2, 2)

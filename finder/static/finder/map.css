@@ -628,3 +628,19 @@
     border-radius: 16px 16px 0 0;
   }
 }
+
+/* ── Relief planning: suggested shelter sites ── */
+.relief-planning .suggest-count-label { gap: 6px; }
+.relief-planning select { font-size: 13px; padding: 1px 4px; border-radius: 4px; border: 1px solid #d1d5db; }
+.suggest-results { margin-top: 8px; font-size: 12.5px; line-height: 1.45; color: #374151; }
+.suggest-results:empty { display: none; }
+.suggest-summary { background: #F0FDFA; border-left: 3px solid #0D9488; padding: 6px 8px; border-radius: 4px; margin-bottom: 6px; }
+.suggest-site { padding: 5px 0; border-top: 1px solid #e5e7eb; cursor: pointer; }
+.suggest-site:hover { background: #F0FDFA; }
+.suggest-site strong { color: #0F766E; }
+.suggest-basis { color: #6B7280; font-size: 11.5px; margin-top: 6px; }
+.suggest-marker {
+  background: #0D9488; color: #fff; border: 2px dashed #fff; border-radius: 50%;
+  width: 26px !important; height: 26px !important; line-height: 22px; text-align: center;
+  font-weight: 700; font-size: 13px; box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+}

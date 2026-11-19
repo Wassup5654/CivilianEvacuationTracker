@@ -19,4 +19,5 @@ urlpatterns = [
     path("api/context", views.context_view, name="context"),
     path("api/routes", views.routes_view, name="routes"),
     path("api/streetview", views.streetview_view, name="streetview"),
+    path("api/suggest-shelters", views.suggest_shelters_view, name="suggest_shelters"),
 ]

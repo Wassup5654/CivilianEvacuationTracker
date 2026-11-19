@@ -1020,7 +1020,7 @@ def compute_routes(
     shelter_costs = []
     for s in snapped:
         node = s.get("node")
-        if node and node in lengths and math.isfinite(lengths[node]):
+        if node is not None and node in lengths and math.isfinite(lengths[node]):
             shelter_costs.append((lengths[node], s, paths[node]))
 
     shelter_costs.sort(key=lambda x: x[0])
@@ -1041,7 +1041,7 @@ def compute_routes(
 
     # Yen alternatives to the best shelter (on simplified DiGraph for performance)
     best_shelter_node = shelter_costs[0][1].get("node")
-    if best_shelter_node:
+    if best_shelter_node is not None:
         try:
             simple_G = nx.DiGraph()
             for u, v, _k, data in G.edges(keys=True, data=True):
@@ -1089,10 +1089,13 @@ def compute_routes(
 
         es = _edge_set(path)
 
-        # Check overlap with already-chosen routes
+        # Check overlap with already-chosen routes. Identical node paths, and
+        # zero-length paths (start snapped onto the shelter's node), have no
+        # edges to compare, so they are caught explicitly as duplicates.
         too_similar = False
-        for ces in chosen_edge_sets:
-            if _overlap_fraction(es, ces) > OVERLAP_MAX:
+        for (_c, _s, cpath), ces in zip(chosen, chosen_edge_sets):
+            if list(path) == list(cpath) or (not es and not ces) \
+                    or _overlap_fraction(es, ces) > OVERLAP_MAX:
                 too_similar = True
                 break
         if too_similar:
