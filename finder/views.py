@@ -26,6 +26,35 @@ from scene import SceneError, find_scene, save_clips, square_bounds
 from .forms import LoginForm, RegisterForm
 
 
+def _params(request):
+    """Request parameters: a JSON POST body (preferred) or, for older callers, the query string.
+
+    The map sends locations, zones and searched addresses in POST bodies so they
+    never appear in URLs, browser history or server access logs.
+    """
+    if request.method == "POST":
+        cached = getattr(request, "_json_params", None)
+        if cached is None:
+            try:
+                cached = json.loads(request.body or b"{}")
+            except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
+                cached = {}
+            if not isinstance(cached, dict):
+                cached = {}
+            request._json_params = cached
+        return cached
+    return request.GET
+
+
+def _parse_bbox(value) -> tuple[float, float, float, float]:
+    """bbox as "w,s,e,n" or [w, s, e, n]; raises ValueError."""
+    parts = value.split(",") if isinstance(value, str) else list(value or [])
+    bbox = tuple(float(str(x).strip()) for x in parts)
+    if len(bbox) != 4:
+        raise ValueError("bbox needs 4 numbers")
+    return bbox
+
+
 def home(request):
     return render(request, "finder/home.html")
 
@@ -60,7 +89,7 @@ def dashboard(request):
 
 @login_required
 def search(request):
-    query = request.GET.get("q", "")
+    query = str(_params(request).get("q", "") or "")
     try:
         matches = search_address(query)
     except GeocodeError as exc:
@@ -71,9 +100,9 @@ def search(request):
 @login_required
 def scene(request):
     try:
-        latitude = float(request.GET.get("lat", ""))
-        longitude = float(request.GET.get("lon", ""))
-    except ValueError:
+        latitude = float(_params(request).get("lat", ""))
+        longitude = float(_params(request).get("lon", ""))
+    except (ValueError, TypeError):
         return JsonResponse({"error": "Confirm a place before loading an image."}, status=400)
     try:
         found = find_scene(latitude, longitude)
@@ -85,12 +114,12 @@ def scene(request):
 @login_required
 def clips(request):
     try:
-        latitude = float(request.GET.get("lat", ""))
-        longitude = float(request.GET.get("lon", ""))
-    except ValueError:
+        latitude = float(_params(request).get("lat", ""))
+        longitude = float(_params(request).get("lon", ""))
+    except (ValueError, TypeError):
         return JsonResponse({"error": "Confirm a place before saving the pixels."}, status=400)
     try:
-        before_param = request.GET.get("before")
+        before_param = _params(request).get("before")
         saved = save_clips(latitude, longitude, before=before_param)
     except SceneError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
@@ -100,9 +129,9 @@ def clips(request):
 @login_required
 def annotate_view(request):
     try:
-        latitude = float(request.GET.get("lat", ""))
-        longitude = float(request.GET.get("lon", ""))
-    except ValueError:
+        latitude = float(_params(request).get("lat", ""))
+        longitude = float(_params(request).get("lon", ""))
+    except (ValueError, TypeError):
         return JsonResponse({"error": "Confirm a place before annotating the scene."}, status=400)
     try:
         annotated_data = annotate_square(latitude, longitude)
@@ -115,9 +144,9 @@ def annotate_view(request):
 @login_required
 def annotated_image_view(request):
     try:
-        latitude = float(request.GET.get("lat", ""))
-        longitude = float(request.GET.get("lon", ""))
-    except ValueError:
+        latitude = float(_params(request).get("lat", ""))
+        longitude = float(_params(request).get("lon", ""))
+    except (ValueError, TypeError):
         return JsonResponse({"error": "Invalid coordinates."}, status=400)
     img_path = SQUARES_DIR / f"{latitude:.5f}_{longitude:.5f}" / "annotated.png"
     if not img_path.is_file():
@@ -128,12 +157,12 @@ def annotated_image_view(request):
 @login_required
 def route_view(request):
     try:
-        latitude = float(request.GET.get("lat", ""))
-        longitude = float(request.GET.get("lon", ""))
-    except ValueError:
+        latitude = float(_params(request).get("lat", ""))
+        longitude = float(_params(request).get("lon", ""))
+    except (ValueError, TypeError):
         return JsonResponse({"error": "Confirm a place before computing routing."}, status=400)
 
-    hazards_param = request.GET.get("hazards", "")
+    hazards_param = _params(request).get("hazards", "")
     hazards = []
     if hazards_param:
         try:
@@ -207,15 +236,15 @@ def route_view(request):
 @login_required
 def damage_view(request):
     """Return GeoJSON damage polygons extracted from Sentinel-2 scene."""
-    raw_lat = request.GET.get("lat")
-    raw_lon = request.GET.get("lon")
+    raw_lat = _params(request).get("lat")
+    raw_lon = _params(request).get("lon")
     if raw_lat is None or raw_lon is None:
         return JsonResponse({"error": "Coordinates are required."}, status=400)
 
     try:
         latitude = float(raw_lat)
         longitude = float(raw_lon)
-    except ValueError:
+    except (ValueError, TypeError):
         return JsonResponse({"error": "Those coordinates are not valid numbers."}, status=400)
 
     try:
@@ -223,9 +252,9 @@ def damage_view(request):
     except SceneError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
 
-    before_param = request.GET.get("before")
-    threshold_param = request.GET.get("threshold")
-    min_area_param = request.GET.get("min_area")
+    before_param = _params(request).get("before")
+    threshold_param = _params(request).get("threshold")
+    min_area_param = _params(request).get("min_area")
 
     threshold = float(threshold_param) if threshold_param else 0.40
     min_area = int(min_area_param) if min_area_param else 16
@@ -375,19 +404,14 @@ def _satellite_damage_for_bbox(bbox: tuple[float, float, float, float]) -> tuple
 
 @login_required
 def context_view(request):
-    """GET /api/context?bbox=w,s,e,n&mode=walk|drive
+    """POST /api/context {bbox: [w,s,e,n] | "w,s,e,n", mode: "walk"|"drive"} (GET still accepted)
 
     Returns damage polygons, real shelters, dead-end/stranded edges as GeoJSON.
     """
-    bbox_str = request.GET.get("bbox", "")
-    mode = request.GET.get("mode", "walk")
-
+    mode = _params(request).get("mode", "walk")
     try:
-        parts = [float(x.strip()) for x in bbox_str.split(",")]
-        if len(parts) != 4:
-            raise ValueError
-        bbox = tuple(parts)  # (west, south, east, north)
-    except (ValueError, AttributeError):
+        bbox = _parse_bbox(_params(request).get("bbox", ""))  # (west, south, east, north)
+    except (ValueError, TypeError):
         return JsonResponse({"error": "bbox must be west,south,east,north"}, status=400)
 
     if mode not in ("walk", "drive"):
@@ -533,22 +557,19 @@ def routes_view(request):
 
 @login_required
 def suggest_shelters_view(request):
-    """GET /api/suggest-shelters?bbox=w,s,e,n&count=3
+    """POST /api/suggest-shelters {bbox: [w,s,e,n], count: 3} (GET still accepted)
 
     Where relief workers could set up new shelters to put the most built-up
     area within a 10-minute walk, avoiding damage. Planning aid only: these
     sites are never used as routing destinations.
     """
     try:
-        parts = [float(x.strip()) for x in request.GET.get("bbox", "").split(",")]
-        if len(parts) != 4:
-            raise ValueError
-        bbox = tuple(parts)
-    except (ValueError, AttributeError):
+        bbox = _parse_bbox(_params(request).get("bbox", ""))
+    except (ValueError, TypeError):
         return JsonResponse({"error": "bbox must be west,south,east,north"}, status=400)
     try:
-        count = max(1, min(int(request.GET.get("count", 3)), 8))
-    except ValueError:
+        count = max(1, min(int(_params(request).get("count", 3)), 8))
+    except (ValueError, TypeError):
         count = 3
 
     from evacuation_engine import assign_edge_costs, get_cached_graph
@@ -585,13 +606,13 @@ def suggest_shelters_view(request):
 
 @login_required
 def streetview_view(request):
-    """GET /api/streetview?lat=...&lon=...
+    """POST /api/streetview {lat, lon} (GET still accepted)
 
     Generates Google Maps Street View embeds and direct panorama links for coordinates.
     """
-    raw_lat = request.GET.get("lat")
-    raw_lon = request.GET.get("lon")
-    if not raw_lat or not raw_lon:
+    raw_lat = _params(request).get("lat")
+    raw_lon = _params(request).get("lon")
+    if raw_lat in (None, "") or raw_lon in (None, ""):
         return JsonResponse({"error": "lat and lon are required."}, status=400)
 
     try:

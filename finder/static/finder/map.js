@@ -166,6 +166,7 @@
       }).addTo(map);
 
       startMarker.on("dragend", function () {
+        clearAccuracyCircle();   // the user has placed themselves; the GPS estimate no longer applies
         var pos = startMarker.getLatLng();
         centerZone(pos.lat, pos.lng);
         debouncedFetch();
@@ -268,7 +269,6 @@
     routeCards.innerHTML = '<div class="panel-loading"><span class="spinner"></span> Computing best evacuation routes…</div>';
 
     var startPos = startMarker.getLatLng();
-    var bboxStr = bbox.join(",");
 
     // 1. Fetch routes (primary result)
     fetch("/api/routes", {
@@ -324,7 +324,7 @@
     if (suggestBox && suggestBox.checked) fetchSuggestions();
 
     // 2. Fetch context layers (damage, shelters, dead ends) independently
-    fetch("/api/context?bbox=" + encodeURIComponent(bboxStr) + "&mode=" + currentMode)
+    postJSON("/api/context", { bbox: bbox, mode: currentMode })
       .then(function (resp) {
         if (!resp.ok) return null;
         return resp.json();
@@ -464,8 +464,7 @@
     var token = ++suggestToken;
     suggestLayer.clearLayers();
     suggestResults.innerHTML = '<div class="panel-loading"><span class="spinner"></span> Finding the best places for new shelters…</div>';
-    fetch("/api/suggest-shelters?bbox=" + encodeURIComponent(bbox.join(",")) +
-          "&count=" + encodeURIComponent(suggestCount ? suggestCount.value : 3))
+    postJSON("/api/suggest-shelters", { bbox: bbox, count: suggestCount ? Number(suggestCount.value) : 3 })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
       .then(function (res) {
         if (token !== suggestToken) return;
@@ -706,6 +705,7 @@
     event.preventDefault();
     clearTimeout(searchDebounce);
     var token = ++searchToken;
+    ++geoRequest;               // a pending location request must not overwrite this search
     matchesList.innerHTML = "";
     setStatus("Looking up that address…", false);
     var query = input.value.trim();
@@ -713,7 +713,7 @@
       setStatus("Type at least 3 characters.", true);
       return;
     }
-    fetch("/api/search?q=" + encodeURIComponent(query))
+    postJSON("/api/search", { q: query })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
       .then(function (res) {
         if (token !== searchToken) return;
@@ -762,6 +762,7 @@
     matchesList.innerHTML = "";
     setStatus("📍 " + match.display_name, false);
     evacBody.hidden = false;
+    clearAccuracyCircle();
 
     initMap(lat, lon);
     placeStartMarker(lat, lon);
@@ -780,26 +781,94 @@
     debouncedFetch();
   }
 
-  // ── Geolocation ──
+  // ── Geolocation ("📍 Use my location") ──
+  var GEO_ACCURACY_WARN_M = 100;   // worse than this: ask the user to place the pin themselves
+  var GEO_GUARD_MS = 20000;        // never leave the button stuck if the permission prompt is ignored
+  var geoRequest = 0;              // bumped by each new location request or address search
+  var accuracyCircle = null;
+
+  function setGeoBusy(busy) {
+    geoBtn.disabled = busy;
+    geoBtn.setAttribute("aria-busy", busy ? "true" : "false");
+  }
+
+  function clearAccuracyCircle() {
+    if (accuracyCircle && map) map.removeLayer(accuracyCircle);
+    accuracyCircle = null;
+  }
+
+  function geoErrorMessage(err) {
+    if (!window.isSecureContext) {
+      return "Your browser only shares location on secure pages (https:// or localhost). " +
+             "Open the app over HTTPS, or search for your address instead.";
+    }
+    switch (err && err.code) {
+      case 1: return "Location permission was denied. Allow location for this site in your browser settings, or search for your address instead.";
+      case 2: return "Your device couldn't determine where you are (no GPS or network fix). Try again near a window, or search for your address instead.";
+      case 3: return "Finding your location took too long. Try again, or search for your address instead.";
+      default: return "Couldn't get your location. Search for your address instead.";
+    }
+  }
+
+  function showAccuracy(lat, lon, accuracyM) {
+    clearAccuracyCircle();
+    if (!map || !accuracyM) return;
+    accuracyCircle = L.circle([lat, lon], {
+      radius: accuracyM, color: ZONE_COLOR, weight: 1, fillColor: ZONE_COLOR, fillOpacity: 0.08, interactive: false
+    }).addTo(map);
+    if (accuracyM > GEO_ACCURACY_WARN_M) {
+      setStatus("📍 Your location is approximate (within about " + formatDist(accuracyM) +
+                "). Drag the brown pin to where you actually are before following a route.", true);
+      showToast("Location is approximate (±" + formatDist(accuracyM) + "). Drag the pin to your exact spot.", 7000);
+    } else {
+      setStatus("📍 Your location (accurate to about " + Math.round(accuracyM) + " m)", false);
+    }
+  }
+
   geoBtn.addEventListener("click", function () {
+    if (geoBtn.disabled) return;
     if (!navigator.geolocation) {
-      showToast("Geolocation not supported by your browser.");
+      setStatus("This browser can't share your location. Search for your address instead.", true);
       return;
     }
-    setStatus("Getting your location…", false);
+    if (!window.isSecureContext) {
+      setStatus(geoErrorMessage(null), true);
+      return;
+    }
+    var myRequest = ++geoRequest;
+    ++searchToken;              // a pending address search must not overwrite this result
+    matchesList.innerHTML = "";
+    setGeoBusy(true);
+    setStatus("Getting your location… allow location access if your browser asks.", false);
+
+    var settled = false;
+    function settle() {
+      if (settled) return false;
+      settled = true;
+      clearTimeout(guard);
+      setGeoBusy(false);
+      return myRequest === geoRequest;   // false if a newer search or request superseded this one
+    }
+    var guard = setTimeout(function () {
+      if (settle()) setStatus(geoErrorMessage({ code: 3 }), true);
+    }, GEO_GUARD_MS);
+
     navigator.geolocation.getCurrentPosition(
       function (pos) {
+        if (!settle()) return;
+        var lat = pos.coords.latitude, lon = pos.coords.longitude;
         selectPlace({
           display_name: "Your location",
-          latitude: pos.coords.latitude.toFixed(7),
-          longitude: pos.coords.longitude.toFixed(7),
+          latitude: lat.toFixed(7),
+          longitude: lon.toFixed(7),
           kind: "geolocation"
         });
+        showAccuracy(lat, lon, pos.coords.accuracy);
       },
       function (err) {
-        setStatus("Location access denied: " + err.message, true);
+        if (settle()) setStatus(geoErrorMessage(err), true);
       },
-      { enableHighAccuracy: true, timeout: 10000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
     );
   });
 
@@ -816,6 +885,16 @@
       debouncedFetch();
     });
   });
+
+  // ── POST helper: locations, zones and searched addresses travel in the request
+  //    body, never in URLs (which end up in browser history and server logs). ──
+  function postJSON(url, payload) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json", "X-CSRFToken": getCSRF() },
+      body: JSON.stringify(payload)
+    });
+  }
 
   // ── CSRF helper ──
   function getCSRF() {
@@ -866,11 +945,7 @@
     var defaultPanoUrl = "https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=" + lat + "," + lon;
     if (linkGmaps) linkGmaps.href = defaultPanoUrl;
 
-    var queryUrl = "/api/streetview?lat=" + encodeURIComponent(lat) + "&lon=" + encodeURIComponent(lon);
-
-    fetch(queryUrl, {
-      headers: { "Accept": "application/json" }
-    })
+    postJSON("/api/streetview", { lat: lat, lon: lon })
       .then(function (res) { return res.json(); })
       .then(function (data) {
         if (data.gmaps_url && linkGmaps) linkGmaps.href = data.gmaps_url;

@@ -569,7 +569,21 @@ def _cache_entry(bbox, layer: str, periods) -> tuple[str, Path, float | None]:
     return key, CACHE_DIR / f"{layer}_{key}.json", LAYERS[layer]["cache_ttl"]
 
 
+_mem_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _disk_cache_enabled() -> bool:
+    """settings.CACHE_AREAS_ON_DISK (default True): False keeps radar layers in memory only."""
+    from django.conf import settings
+    return bool(getattr(settings, "CACHE_AREAS_ON_DISK", True))
+
+
 def _read_cache(path: Path, ttl: float | None) -> dict | None:
+    if not _disk_cache_enabled():
+        entry = _mem_cache.get(path.name)
+        if entry and (ttl is None or time.time() - entry[0] < ttl):
+            return _deserialise(json.loads(json.dumps(entry[1])))
+        return None
     if path.exists() and (ttl is None or time.time() - path.stat().st_mtime < ttl):
         try:
             return _deserialise(json.loads(path.read_text(encoding="utf-8")))
@@ -594,6 +608,9 @@ def _compute_and_store(key: str, path: Path, ttl, bbox, layer: str, region_name:
             logger.warning("Radar estimate (%s) failed: %s", layer, exc)
             return {"features": [], "sources": [], "stats": {},
                     "notes": [f"{LAYERS[layer]['title']} could not be computed (data service unreachable)."]}
+        if not _disk_cache_enabled():
+            _mem_cache[path.name] = (time.time(), _serialise(result))
+            return result
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         try:
             path.write_text(json.dumps(_serialise(result)), encoding="utf-8")

@@ -170,6 +170,30 @@ SHELTER_OSM_TAGS = [
 ]
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Privacy: never write coordinates, zones or searched addresses to the logs.
+# The map sends them in POST bodies; this filter also strips query strings from
+# Django's request logs in case an older client puts them in the URL.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {"redact_query": {"()": "finder.logging_filters.RedactQueryStringFilter"}},
+    "formatters": {"server": {"()": "django.utils.log.ServerFormatter", "format": "[{server_time}] {message}", "style": "{"}},
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "filters": ["redact_query"]},
+        "server": {"class": "logging.StreamHandler", "formatter": "server", "filters": ["redact_query"]},
+    },
+    "loggers": {
+        "django.server": {"handlers": ["server"], "level": "INFO", "propagate": False},
+        "django.request": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+    },
+}
+
+# Privacy: road networks, shelter lists and radar estimates are cached per area
+# (a ~1 km grid, never linked to a user) to make repeat visits fast. Set to False
+# to keep these caches in memory only, so no record of looked-up areas is written
+# to disk.
+CACHE_AREAS_ON_DISK = True
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 
 # Google Maps Street View Configuration (Optional API Key for official Embed API)

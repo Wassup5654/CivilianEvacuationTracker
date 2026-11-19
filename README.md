@@ -57,7 +57,7 @@ The platform combines **official damage assessments from Copernicus EMS and UNOS
 - **Fail-Safe Offline/Resilient Ingestion**: 3-tier road harvesting engine with automatic fallback from Overpass API mirrors to recursive 2×2 Core OpenStreetMap chunked downloads.
 - **Static 5 km Satellite Corridor Mode**: Generates 10-meter-per-pixel annotated Sentinel-2 imagery with scale bars, impassable alerts, and civilian next-steps instructions.
 - **Street-Level Imagery**: On-demand Google Street View for any shelter or route destination, embedded in a sliding drawer, with a one-click link to the fullscreen panorama in Google Maps. No client-side API token is required.
-- **Privacy-by-Design**: Absolute zero database storage of searched addresses or GPS coordinates.
+- **Privacy-by-Design**: Searched addresses and GPS locations are never stored in the database, never put in URLs, and never written to logs; area caches can be kept in memory only.
 
 ---
 
@@ -309,7 +309,10 @@ For building-level damage, the system optionally supports the prs-eth xBD-S12 mo
 Retrieves damage polygons, verified shelters, dead ends, and graph status for a map view.
 
 ```http
-GET /api/context?bbox={west},{south},{east},{north}&mode={walk|drive}
+POST /api/context
+Content-Type: application/json
+
+{ "bbox": [west, south, east, north], "mode": "walk" }
 ```
 
 #### Response (`application/json`):
@@ -407,13 +410,19 @@ Returns 512x512 PNG imagery with a 10m/pixel scale bar, flood and structural dam
 
 ### 4. Suggested Shelter Sites API
 ```http
-GET /api/suggest-shelters?bbox={west},{south},{east},{north}&count=3
+POST /api/suggest-shelters
+Content-Type: application/json
+
+{ "bbox": [west, south, east, north], "count": 3 }
 ```
 Returns up to `count` (1–8) suggested sites, each with `lat`, `lon`, `street`, `adds_coverage_pct`, `damaged_area_share_pct`, `nearest_damage_m` and a `catchment` polygon, plus `coverage.existing_shelters_pct`, `coverage.with_suggestions_pct`, `notes` and the method `basis`.
 
 ### 5. Street-Level Imagery API
 ```http
-GET /api/streetview?lat=38.04815&lon=-78.50815
+POST /api/streetview
+Content-Type: application/json
+
+{ "lat": 38.04815, "lon": -78.50815 }
 ```
 Provides street-level ground truth preview for any shelter or route waypoint via Google Street View:
 - Returns an embedded panorama iframe URL (`https://maps.google.com/maps?layer=c&cbll={lat},{lon}...` or official Google Maps Embed API if `GOOGLE_MAPS_API_KEY` is configured).
@@ -479,7 +488,7 @@ The container applies database migrations on start. Open [http://localhost:8000/
 The codebase includes exhaustive test suites covering graph routing, reachability algorithms, ML classifiers, and API endpoints:
 
 ```bash
-# Run Django integration, engine, official-damage, radar & shelter-suggestion tests (87 tests)
+# Run Django integration, engine, official-damage, radar, shelter-suggestion & privacy tests (98 tests)
 python manage.py test
 
 # Run Evacuation Engine synthetic graph unit tests (25 tests)
@@ -494,6 +503,7 @@ python test_damage.py
 - **Route Dead Ends**: Only spurs branching off a chosen route are marked, and a dead end never shares a node, edge, or drawn geometry with a route.
 - **Reachability Inversion**: Verifies disconnected nodes and damage-cut components are flagged without producing false positives on undamaged maps.
 - **Official Damage**: Grade normalisation (Copernicus wording, UNOSAT codes), file import (reprojected UNOSAT grids, railway filtering), Copernicus lookup with caching and outage handling, destroyed roads blocking routes, and building/area warnings that never reroute.
+- **Privacy**: locations accepted in POST bodies, query strings redacted from request logs, no coordinates in routing logs, and nothing written to disk when `CACHE_AREAS_ON_DISK = False`.
 - **Suggested Shelters**: built-up demand cells, greedy maximum coverage, existing shelters filling their area first, keeping 150 m from damage, blocked roads, and that suggestions are never returned as routes.
 - **Radar Estimates**: the shipped model loads and matches the app's features, fallbacks (tuned statistic, then t-test), change detection, zone-wide shift removal, built-up masking, the systematic-noise cutoff, both layers' date windows, region matching, caching, background computation, and a guarantee that estimates never affect routing.
 - **Route Diversity**: Enforces mathematical Jaccard edge-overlap bounds.
@@ -506,7 +516,12 @@ python test_damage.py
 This platform was built adhering to strict ethical guidelines:
 
 1. **No Weapon or Force Detection**: The system does **not** locate, track, or identify military vehicles, weapons, fortifications, or combat personnel.
-2. **Zero Coordinate Retention**: Searched addresses, IP addresses, and client geolocation coordinates are **never logged or saved to the database**.
+2. **Zero Coordinate Retention**: Searched addresses and client geolocation coordinates are **never saved to the database and never logged**:
+   - The map sends addresses, start points and zones in **POST bodies**, so they never appear in URLs, browser history or server access logs. (Endpoints still accept GET for older clients, and a logging filter redacts query strings from Django's request log either way.)
+   - Routing logs record HTTP status and timing only, never coordinates, request URLs or response bodies.
+   - For speed, road networks, shelter lists and radar estimates are cached per area on a ~1 km grid, with no user identity attached. Set `CACHE_AREAS_ON_DISK = False` to keep these caches in memory only, so no record of looked-up areas is written to disk.
+   - Limits: Street View requests go to Google with the shelter's coordinates, and the legacy satellite-scene tools (`/api/scene`, `/api/clips`, `/api/annotate`) save image clips in folders named by location under `data/squares/`.
+   - **Use my location** runs entirely in the browser, only on secure (HTTPS or localhost) pages, and shows an accuracy circle; if the fix is worse than 100 m, it asks the user to drag the pin to where they really are.
 3. **No Commercial Imagery Tasking**: Relies entirely on free, public data: Copernicus EMS and UNOSAT damage assessments, and ESA Copernicus Sentinel-2 imagery published via STAC.
 4. **Honest Uncertainty**: Satellite imagery can be obscured by clouds, smoke, or sensor revisit intervals. The platform explicitly highlights resolution limits (e.g. potholes and trip hazards marked as *"not visible at 10m"*), date of capture, and disclaimers advising civilians to prioritize verified on-the-ground official directions.
 

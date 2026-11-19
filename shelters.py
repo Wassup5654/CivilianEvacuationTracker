@@ -24,7 +24,15 @@ _shelter_cache: dict[tuple, tuple[float, list[dict[str, Any]]]] = {}
 SHELTER_CACHE_TTL = 3600
 
 SHELTERS_DIR = Path("cache") / "shelters"
-SHELTERS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _disk_cache_enabled() -> bool:
+    """settings.CACHE_AREAS_ON_DISK (default True): False keeps shelter lists in memory only."""
+    try:
+        from django.conf import settings
+        return bool(getattr(settings, "CACHE_AREAS_ON_DISK", True))
+    except Exception:
+        return True
 
 
 def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -265,7 +273,8 @@ def _cached_osm_shelters(bb: tuple[float, float, float, float]) -> list[dict[str
         return cached[1]
 
     disk_file = SHELTERS_DIR / f"shelters_{key[0]}_{key[1]}_{key[2]}_{key[3]}.json"
-    if disk_file.exists():
+    use_disk = _disk_cache_enabled()
+    if use_disk and disk_file.exists():
         try:
             data = json.loads(disk_file.read_text(encoding="utf-8"))
             if data:
@@ -278,7 +287,9 @@ def _cached_osm_shelters(bb: tuple[float, float, float, float]) -> list[dict[str
     if osm:
         _shelter_cache[key] = (now, osm)
         try:
-            disk_file.write_text(json.dumps(osm), encoding="utf-8")
+            if use_disk:
+                SHELTERS_DIR.mkdir(parents=True, exist_ok=True)
+                disk_file.write_text(json.dumps(osm), encoding="utf-8")
         except Exception:
             pass
     return osm

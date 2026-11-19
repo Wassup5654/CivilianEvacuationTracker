@@ -47,9 +47,9 @@ DISCLAIMER = "Damage data comes from Copernicus EMS and UNOSAT satellite assessm
 # ── Graph cache (in-memory + disk) ──
 _graph_cache: dict[tuple, tuple[float, Any]] = {}
 CACHE_DIR = Path("cache")
-CACHE_DIR.mkdir(exist_ok=True)
 GRAPHS_DIR = CACHE_DIR / "graphs"
-GRAPHS_DIR.mkdir(exist_ok=True)
+if getattr(settings, "CACHE_AREAS_ON_DISK", True):
+    GRAPHS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Reliable Overpass API endpoints
 OVERPASS_MIRRORS = [
@@ -71,6 +71,11 @@ def haversine_distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> 
          math.cos(phi1) * math.cos(phi2) * (math.sin(delta_lambda / 2.0) ** 2))
     c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(max(0.0, 1.0 - a)))
     return R * c
+
+
+def disk_cache_enabled() -> bool:
+    """settings.CACHE_AREAS_ON_DISK (default True): False keeps area caches in memory only."""
+    return bool(getattr(settings, "CACHE_AREAS_ON_DISK", True))
 
 
 def _round_bbox(bbox: list[float] | tuple[float, ...], decimals: int = 2) -> tuple:
@@ -126,7 +131,8 @@ def _fetch_url_with_backoff(
 ) -> tuple[int, bytes, str]:
     """Fetch URL with short delay & backoff for 429/503/504 only. Never retries 400.
 
-    Logs URL, bbox, HTTP status, and first 500 characters of response body.
+    Logs only the HTTP status and timing: never the URL, bbox or response body,
+    which reveal the area a user is looking at.
     Returns (status_code, response_bytes, body_first_500).
     """
     for attempt in range(max_retries + 1):
@@ -137,19 +143,13 @@ def _fetch_url_with_backoff(
                 elapsed = time.time() - t0
                 data = resp.read()
                 body_500 = data[:500].decode("utf-8", errors="replace")
-                logger.info(
-                    f"[OSM Core API Attempt {attempt+1}] URL: {url} | Bbox: {bbox_info} | "
-                    f"HTTP {resp.status} in {elapsed:.2f}s | Body preview: {body_500[:120]!r}"
-                )
+                logger.info(f"[OSM Core API attempt {attempt+1}] HTTP {resp.status} in {elapsed:.2f}s")
                 return resp.status, data, body_500
         except urllib.error.HTTPError as e:
             elapsed = time.time() - t0
             raw_body = e.read()
             body_500 = raw_body.decode("utf-8", errors="replace")[:500]
-            logger.warning(
-                f"[OSM Core API Attempt {attempt+1}] URL: {url} | Bbox: {bbox_info} | "
-                f"HTTP {e.code} ({e.reason}) in {elapsed:.2f}s | Body (first 500 chars): {body_500!r}"
-            )
+            logger.warning(f"[OSM Core API attempt {attempt+1}] HTTP {e.code} ({e.reason}) in {elapsed:.2f}s")
             # Do NOT retry 400!
             if e.code == 400:
                 return 400, b"", body_500
@@ -164,10 +164,7 @@ def _fetch_url_with_backoff(
             return e.code, b"", body_500
         except Exception as exc:
             elapsed = time.time() - t0
-            logger.warning(
-                f"[OSM Core API Attempt {attempt+1}] URL: {url} | Bbox: {bbox_info} | "
-                f"Exception {type(exc).__name__}: {exc} in {elapsed:.2f}s"
-            )
+            logger.warning(f"[OSM Core API attempt {attempt+1}] {type(exc).__name__} after {elapsed:.2f}s")
             if attempt < max_retries:
                 time.sleep(1.0)
                 continue
@@ -219,10 +216,7 @@ def _download_core_osm_tiles(
     if status == 400 and depth < max_depth:
         lowered = body_500.lower()
         if "too many nodes" in lowered or "50000" in lowered or "limit" in lowered or "area" in lowered:
-            logger.info(
-                f"Core OSM API returned 400 (node limit) for bbox {bbox}. "
-                f"Splitting into 2x2 sub-tiles (depth {depth+1})..."
-            )
+            logger.info(f"Core OSM API returned 400 (node limit); splitting into 2x2 sub-tiles (depth {depth+1})")
             mid_w = (west + east) / 2.0
             mid_s = (south + north) / 2.0
             sub_results = []
@@ -316,7 +310,8 @@ def get_cached_graph(
     # 2. Disk cache
     disk_name = f"graph_{mode}_{cache_key[0][0]}_{cache_key[0][1]}_{cache_key[0][2]}_{cache_key[0][3]}.pkl"
     disk_path = GRAPHS_DIR / disk_name
-    if disk_path.exists():
+    use_disk = disk_cache_enabled()
+    if use_disk and disk_path.exists():
         try:
             G = pickle.loads(disk_path.read_bytes())
             _graph_cache[cache_key] = (now, G)
@@ -325,7 +320,7 @@ def get_cached_graph(
             pass
 
     # Also search disk for any graph enclosing this bbox
-    for pkl in GRAPHS_DIR.glob(f"graph_{mode}_*.pkl"):
+    for pkl in (GRAPHS_DIR.glob(f"graph_{mode}_*.pkl") if use_disk else []):
         try:
             parts = pkl.stem.split("_")
             if len(parts) >= 6:
@@ -348,25 +343,24 @@ def get_cached_graph(
         for attempt in range(2):
             try:
                 ox.settings.overpass_url = mirror
-                logger.info(
-                    f"[Overpass Request] Mirror: {mirror} | Bbox: {padded} | Attempt: {attempt+1}"
-                )
+                logger.info(f"[Overpass request] Mirror: {mirror} | Attempt: {attempt+1}")
                 t0 = time.time()
                 G = ox.graph_from_bbox(bbox=padded, network_type=network_type)
                 logger.info(f"[Overpass OK] Mirror: {mirror} in {time.time()-t0:.2f}s")
                 _graph_cache[cache_key] = (now, G)
-                try:
-                    disk_path.write_bytes(pickle.dumps(G))
-                except Exception:
-                    pass
+                if use_disk:
+                    try:
+                        disk_path.write_bytes(pickle.dumps(G))
+                    except Exception:
+                        pass
                 return G
             except Exception as exc:
                 last_err = exc
                 err_str = str(exc)
-                logger.warning(
-                    f"[Overpass Error] Mirror: {mirror} | Attempt: {attempt+1} | "
-                    f"Error: {err_str[:500]}"
-                )
+                # Log the error type and HTTP code only: the message can echo the query area.
+                code = next((c for c in ("400", "429", "502", "503", "504") if c in err_str), "")
+                logger.warning(f"[Overpass error] Mirror: {mirror} | Attempt: {attempt+1} | "
+                               f"{type(exc).__name__} {code}".rstrip())
                 # Never retry 400
                 if "400" in err_str:
                     break
@@ -378,17 +372,18 @@ def get_cached_graph(
 
     # 4. Fallback: Core OpenStreetMap 0.6 API (with auto-tiling & 400 node limit handling)
     try:
-        logger.info(f"Attempting Core OSM API fallback for bbox {padded}...")
+        logger.info("Attempting Core OSM API fallback...")
         G = _load_graph_from_core_osm_api(padded, mode=mode)
         _graph_cache[cache_key] = (now, G)
-        try:
-            disk_path.write_bytes(pickle.dumps(G))
-        except Exception:
-            pass
+        if use_disk:
+            try:
+                disk_path.write_bytes(pickle.dumps(G))
+            except Exception:
+                pass
         return G
     except Exception as exc:
         last_err = exc
-        logger.error(f"Core OSM API failed: {exc}")
+        logger.error(f"Core OSM API failed: {type(exc).__name__}")
 
     raise RuntimeError("Area too large or map servers busy. Try a smaller area.")
 
