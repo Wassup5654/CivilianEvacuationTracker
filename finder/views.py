@@ -254,8 +254,60 @@ def damage_view(request):
 # These do NOT store user addresses or locations in any model or log.
 
 
-def _get_damage_for_bbox(bbox: tuple[float, float, float, float]) -> tuple[dict, list, bool]:
-    """Retrieve or compute damage polygons for bounding box.
+def _get_damage_for_bbox(bbox: tuple[float, float, float, float]) -> dict:
+    """Damage for the map and routing, from official sources (Copernicus EMS + imports).
+
+    The Sentinel-2 colour-comparison estimate is only added when
+    settings.SATELLITE_DAMAGE_IN_ROUTING is True (off by default: it cannot
+    tell damage from clouds or lighting at 10 m).
+    """
+    from django.conf import settings
+    from official_damage import damage_geojson, official_damage_for_bbox, road_grade_polygons
+
+    official = official_damage_for_bbox(bbox)
+    features = list(official["features"])
+    sources = list(official["sources"])
+    notes = list(official["notes"])
+    geo_polygons: list = []
+    assessed = official["assessed"]  # official assessments only; radar estimates don't count
+
+    # Sentinel-1 radar estimates for configured war zones (warn-only "area" features).
+    # Uncached zones are computed in the background so the map isn't held up.
+    radar_pending = False
+    if getattr(settings, "RADAR_DAMAGE_ESTIMATES", True):
+        try:
+            from radar_damage import estimate_for_bbox
+            radar = estimate_for_bbox(bbox, wait=False)
+            features += radar["features"]
+            sources += radar["sources"]
+            notes += radar["notes"]
+            radar_pending = radar.get("pending", False)
+        except Exception as exc:
+            notes.append(f"Radar damage estimate unavailable: {exc}")
+
+    geojson = damage_geojson(features)
+
+    if getattr(settings, "SATELLITE_DAMAGE_IN_ROUTING", False):
+        sat_geojson, geo_polygons, sat_assessed = _satellite_damage_for_bbox(bbox)
+        for f in sat_geojson["features"]:
+            f.setdefault("properties", {})["kind"] = "estimated"
+        geojson["features"].extend(sat_geojson["features"])
+        assessed = assessed or sat_assessed
+
+    return {
+        "geojson": geojson,
+        "geo_polygons": geo_polygons,
+        "road_grades": road_grade_polygons(features, bbox),  # official roads only
+        "features": features,
+        "assessed": assessed,
+        "sources": sources,
+        "notes": notes,
+        "radar_pending": radar_pending,
+    }
+
+
+def _satellite_damage_for_bbox(bbox: tuple[float, float, float, float]) -> tuple[dict, list, bool]:
+    """Estimate damage polygons from Sentinel-2 colour change (legacy, low confidence).
 
     Returns (damage_geojson, geo_polygons, damage_assessed_bool).
     """
@@ -367,25 +419,28 @@ def context_view(request):
             "details": str(exc),
         }, status=502)
 
-    # Damage polygons via Sentinel-2 + xBD detection
-    damage_geojson, geo_polygons, damage_assessed = _get_damage_for_bbox(bbox)
+    # Official damage (Copernicus EMS + imported datasets such as UNOSAT)
+    damage = _get_damage_for_bbox(bbox)
 
     # Stranded analysis: only roads that damage cut off from every shelter.
     # Dead ends are NOT computed here; /api/routes returns just the ones that
     # branch off the chosen routes, after routing.
     snapped = snap_shelters_to_graph(G, shelters)
     shelter_nodes = {s["node"] for s in snapped if "node" in s}
-    blocked = assign_edge_costs(G, geo_polygons)
+    blocked = assign_edge_costs(G, damage["geo_polygons"], damage["road_grades"])
     stranded_geojson = dead_end_geojson(G, [], damage_cut_nodes(G, blocked, shelter_nodes))
 
     return JsonResponse({
-        "damage": damage_geojson,
+        "damage": damage["geojson"],
+        "damage_sources": damage["sources"],
+        "damage_notes": damage["notes"],
         "shelters": snapped if snapped else shelters,
         "dead_ends": {"type": "FeatureCollection", "features": []},
         "stranded": stranded_geojson,
         "graph_nodes": G.number_of_nodes(),
         "graph_edges": G.number_of_edges(),
-        "damage_assessed": damage_assessed,
+        "damage_assessed": damage["assessed"],
+        "radar_pending": damage["radar_pending"],
     })
 
 
@@ -421,7 +476,7 @@ def routes_view(request):
     if mode not in ("walk", "drive"):
         mode = "walk"
 
-    from evacuation_engine import get_cached_graph, compute_routes
+    from evacuation_engine import DISCLAIMER, get_cached_graph, compute_routes
     from shelters import find_shelters
     from django.conf import settings
     auto_expand_km = getattr(settings, "ROUTE_AUTO_EXPAND_KM", 2.0)
@@ -436,7 +491,7 @@ def routes_view(request):
                 f"No shelters found inside the evacuation zone or within {auto_expand_km:.1f} km. "
                 "Please enlarge the evacuation zone or register verified shelters in the admin panel."
             ],
-            "disclaimer": "Damage is estimated from satellite imagery and may be wrong. Follow official guidance.",
+            "disclaimer": DISCLAIMER,
         })
 
     # Get graph
@@ -448,8 +503,8 @@ def routes_view(request):
             "details": str(exc),
         }, status=502)
 
-    # Damage polygons via Sentinel-2 + xBD detection
-    _, geo_polygons, damage_assessed = _get_damage_for_bbox(bbox)
+    # Official damage (Copernicus EMS + imported datasets such as UNOSAT)
+    damage = _get_damage_for_bbox(bbox)
 
     result = compute_routes(
         G,
@@ -457,9 +512,16 @@ def routes_view(request):
         start_lon,
         shelters,
         mode=mode,
-        damage_polys=geo_polygons,
-        damage_assessed=damage_assessed,
+        damage_polys=damage["geo_polygons"],
+        damage_assessed=damage["assessed"],
+        road_grades=damage["road_grades"],
     )
+    from official_damage import annotate_routes
+    annotate_routes(result, damage["features"])
+    result["damage_sources"] = damage["sources"]
+    result["radar_pending"] = damage["radar_pending"]
+    if damage["notes"]:
+        result.setdefault("warnings", []).extend(damage["notes"])
 
     if was_expanded:
         result.setdefault("warnings", []).insert(

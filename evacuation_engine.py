@@ -42,7 +42,7 @@ GRAPH_CACHE_TTL = getattr(settings, "GRAPH_CACHE_TTL_SEC", 86400)
 GRAPH_PADDING_M = getattr(settings, "GRAPH_PADDING_M", 500)
 MAX_BBOX_SPAN_M = getattr(settings, "MAX_BBOX_SPAN_M", 5000.0)  # 5 km max side
 
-DISCLAIMER = "Damage is estimated from satellite imagery and may be wrong. Follow official guidance."
+DISCLAIMER = "Damage data comes from Copernicus EMS and UNOSAT satellite assessments, which may be outdated, incomplete, or missing for this area. Follow official guidance."
 
 # ── Graph cache (in-memory + disk) ──
 _graph_cache: dict[tuple, tuple[float, Any]] = {}
@@ -427,19 +427,38 @@ def _damage_fraction(edge_geom: LineString, damage_tree: STRtree, damage_polys: 
 
 # ── Cost assignment ──
 
+POSSIBLE_DAMAGE_ALPHA = 1.0  # extra cost weight for officially "possibly damaged" roads
+
+
 def assign_edge_costs(
     G: nx.MultiDiGraph,
     damage_polys: list,
+    road_grades: dict[str, list] | None = None,
 ) -> set[tuple[int, int, int]]:
     """Assign 'cost' to each edge and return blocked edge keys.
 
-    cost = length * (1 + ALPHA * damage_fraction)
-    Blocked when damage_fraction >= BLOCK_THRESHOLD or highway=construction / access=no.
+    damage_polys: estimated damage areas (satellite heuristic).
+    road_grades:  officially graded road corridors, {"destroyed" | "damaged" |
+                  "possibly_damaged": [polygons]} (see official_damage.road_grade_polygons).
+
+    cost = length * (1 + ALPHA * damaged_fraction + POSSIBLE_DAMAGE_ALPHA * possibly_fraction)
+    Blocked when the estimated-damage or officially-destroyed fraction >= BLOCK_THRESHOLD,
+    or the edge is tagged highway=construction / access=no.
     """
     blocked: set[tuple[int, int, int]] = set()
 
     # Build STRtree from damage polygons
     damage_tree = STRtree(damage_polys) if damage_polys else None
+    grade_trees = {
+        grade: (STRtree(polys), polys)
+        for grade, polys in (road_grades or {}).items() if polys
+    }
+
+    def grade_frac(grade: str, geom) -> float:
+        if grade not in grade_trees or geom is None:
+            return 0.0
+        tree, polys = grade_trees[grade]
+        return _damage_fraction(geom, tree, polys)
 
     for u, v, k, data in G.edges(keys=True, data=True):
         base_len = float(data.get("length", 1.0))
@@ -457,14 +476,17 @@ def assign_edge_costs(
         # Compute damage fraction
         edge_geom = _edge_line(G, u, v, data)
         dfrac = _damage_fraction(edge_geom, damage_tree, damage_polys) if damage_tree else 0.0
-        data["damage_frac"] = dfrac
+        destroyed = grade_frac("destroyed", edge_geom)
+        damaged = min(1.0, max(dfrac, grade_frac("damaged", edge_geom) + destroyed))
+        possibly = grade_frac("possibly_damaged", edge_geom)
+        data["damage_frac"] = damaged
 
-        if dfrac >= BLOCK_THRESHOLD:
+        if dfrac >= BLOCK_THRESHOLD or destroyed >= BLOCK_THRESHOLD:
             data["cost"] = float("inf")
             data["blocked"] = True
             blocked.add((u, v, k))
         else:
-            data["cost"] = base_len * (1.0 + ALPHA * dfrac)
+            data["cost"] = base_len * (1.0 + ALPHA * damaged + POSSIBLE_DAMAGE_ALPHA * possibly)
             data["blocked"] = False
 
     return blocked
@@ -941,6 +963,7 @@ def compute_routes(
     mode: str = "walk",
     damage_polys: list | None = None,
     damage_assessed: bool = True,
+    road_grades: dict[str, list] | None = None,
 ) -> dict[str, Any]:
     """Compute up to 3 best evacuation routes to real shelters.
 
@@ -954,7 +977,7 @@ def compute_routes(
     warnings: list[str] = []
 
     # 1. Assign edge costs
-    blocked_edges = assign_edge_costs(G, damage_polys)
+    blocked_edges = assign_edge_costs(G, damage_polys, road_grades)
 
     # 2. Snap start
     try:
@@ -1116,11 +1139,11 @@ def compute_routes(
         reason = rank_reasons[idx] if idx < len(rank_reasons) else "Alternative route"
         if damage_assessed:
             if dmg_m == 0:
-                reason += ", no damage exposure"
+                reason += ", no damaged roads"
             else:
-                reason += f", {dmg_m:.0f} m through damage"
+                reason += f", {dmg_m:.0f} m on damaged roads"
         else:
-            reason += ", damage not assessed"
+            reason += ", no damage data for this area"
 
         # Different shelter than rank 1?
         if idx > 0 and shelter.get("node") != chosen[0][1].get("node"):

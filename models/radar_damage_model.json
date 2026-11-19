@@ -1,0 +1,112 @@
+{
+  "features": [
+    "abs_t_vv_mean",
+    "abs_t_vh_mean",
+    "abs_t_vv_max",
+    "abs_t_vh_max",
+    "t_vv_mean",
+    "t_vh_mean",
+    "delta_vv",
+    "delta_vh",
+    "log_std_ratio_vv",
+    "log_std_ratio_vh",
+    "pre_vv",
+    "pre_vh",
+    "pre_vh_minus_vv",
+    "abs_t_s50",
+    "abs_t_s150",
+    "delta_vv_s50",
+    "delta_vh_s50",
+    "delta_vv_s150",
+    "delta_vh_s150",
+    "built_frac_100m",
+    "z_vv_max",
+    "z_vh_max",
+    "z_s50",
+    "z_s150"
+  ],
+  "thresholds": {
+    "possibly_damaged": 0.8419677475748194,
+    "damaged": 0.9577028449176368
+  },
+  "fallback_statistic": {
+    "tracks": 3,
+    "pol": "max",
+    "median": true,
+    "stat": "zpre"
+  },
+  "fallback_thresholds": {
+    "possibly_damaged": 1.6002588272094727,
+    "damaged": 1.9387127161026
+  },
+  "smooth_m": 50,
+  "sklearn_version": "1.9.0",
+  "trained_on": [
+    "Chernihiv",
+    "Hostomel",
+    "Irpin",
+    "Kharkiv",
+    "Mariupol",
+    "Rubizhne",
+    "Volnovakha"
+  ],
+  "dev_leave_one_out_auc": {
+    "Chernihiv": 0.859,
+    "Hostomel": 0.685,
+    "Irpin": 0.638,
+    "Kharkiv": 0.79,
+    "Mariupol": 0.74,
+    "Rubizhne": 0.96,
+    "Volnovakha": 0.725
+  },
+  "test_auc": {
+    "Avdiivka": 0.584,
+    "Gaza City": 0.72,
+    "Khan Younis": 0.608,
+    "Lysychansk": 0.822,
+    "Moschun": 0.81,
+    "Sievierodonetsk": 0.645
+  },
+  "test_auc_mean": 0.698,
+  "test_auc_mean_tuned_statistic": 0.678,
+  "test_auc_mean_previous_method": 0.561,
+  "test_at_thresholds": {
+    "Avdiivka": {
+      "tpr_possibly": 0.008,
+      "fpr_possibly": 0.0,
+      "tpr_damaged": 0.0,
+      "fpr_damaged": 0.0
+    },
+    "Gaza City": {
+      "tpr_possibly": 0.478,
+      "fpr_possibly": 0.22,
+      "tpr_damaged": 0.255,
+      "fpr_damaged": 0.05
+    },
+    "Khan Younis": {
+      "tpr_possibly": 0.245,
+      "fpr_possibly": 0.137,
+      "tpr_damaged": 0.0,
+      "fpr_damaged": 0.052
+    },
+    "Lysychansk": {
+      "tpr_possibly": 0.176,
+      "fpr_possibly": 0.006,
+      "tpr_damaged": 0.052,
+      "fpr_damaged": 0.0
+    },
+    "Moschun": {
+      "tpr_possibly": 0.0,
+      "fpr_possibly": 0.0,
+      "tpr_damaged": 0.0,
+      "fpr_damaged": 0.0
+    },
+    "Sievierodonetsk": {
+      "tpr_possibly": 0.138,
+      "fpr_possibly": 0.054,
+      "tpr_damaged": 0.034,
+      "fpr_damaged": 0.035
+    }
+  },
+  "score_transform": "raw"
+}

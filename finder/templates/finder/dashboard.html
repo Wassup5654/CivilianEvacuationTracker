@@ -83,7 +83,11 @@
         <!-- Legend -->
         <div class="map-legend">
           <h3>Legend</h3>
-          <div class="legend-row"><span class="swatch" style="background:#DC2626;opacity:0.4"></span> Damage area</div>
+          <div class="legend-row"><span class="swatch" style="background:#7F1D1D"></span> Destroyed (official)</div>
+          <div class="legend-row"><span class="swatch" style="background:#DC2626"></span> Damaged (official)</div>
+          <div class="legend-row"><span class="swatch" style="background:#F59E0B"></span> Possibly damaged (official)</div>
+          <div class="legend-row"><span class="swatch" style="background:#7C3AED;opacity:0.5;border-style:dashed"></span> Estimated: war's first months (radar)</div>
+          <div class="legend-row"><span class="swatch" style="background:#DB2777;opacity:0.5;border-style:dashed"></span> Estimated: new in last 12 months (radar)</div>
           <div class="legend-row"><span class="swatch route-swatch" style="background:#16A34A"></span> Route 1 (best)</div>
           <div class="legend-row"><span class="swatch route-swatch" style="background:#7C3AED"></span> Route 2</div>
           <div class="legend-row"><span class="swatch route-swatch" style="background:#EA580C"></span> Route 3</div>
@@ -95,7 +99,7 @@
         <!-- Footer info -->
         <div class="evac-footer" id="evac-footer">
           <p id="imagery-date" class="footer-note"></p>
-          <p class="footer-disclaimer">⚠ Damage is estimated from satellite imagery and may be wrong. Follow official guidance.</p>
+          <p class="footer-disclaimer">⚠ Damage assessments come from satellite analysis by Copernicus EMS and UNOSAT, may be out of date or incomplete, and are not field-verified. Follow official guidance.</p>
         </div>
       </aside>
     </div>
@@ -103,5 +107,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'finder/map.js' %}?v=2.5"></script>
+<script src="{% static 'finder/map.js' %}?v=2.8"></script>
 {% endblock %}

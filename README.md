@@ -11,7 +11,7 @@
 
 An open-source, humanitarian geospatial intelligence platform engineered to assist refugees, relief workers, and civilian emergency coordinators navigating active disaster and conflict zones. 
 
-The platform synthesizes **real-time Sentinel-2 multispectral satellite imagery**, **deep-learning damage classification (xBD)**, **dynamic OpenStreetMap road network topologies**, and **diverse graph routing algorithms** to calculate the safest, hazard-aware evacuation paths to verified shelters.
+The platform combines **official damage assessments from Copernicus EMS and UNOSAT**, **Sentinel-2 satellite imagery**, **dynamic OpenStreetMap road network topologies**, and **diverse graph routing algorithms** to calculate the safest, hazard-aware evacuation paths to verified shelters.
 
 > **Project context:** Developed using **Antigravity** for **AFS x VT**, a build challenge sponsored by **Accenture Federal Services** and Virginia Tech. See [Project Background](#-project-background).
 
@@ -28,7 +28,9 @@ The platform synthesizes **real-time Sentinel-2 multispectral satellite imagery*
   - [3. Spur & Cul-de-Sac Pruning](#3-spur--cul-de-sac-pruning)
   - [4. Diverse Multi-Path Generation (Yen's Algorithm + Diversity Filtering)](#4-diverse-multi-path-generation)
   - [5. Automated Shelter Discovery & Street Enrichment](#5-automated-shelter-discovery--street-enrichment)
-- [Satellite Imagery & Damage Detection](#-satellite-imagery--damage-detection)
+- [Official Damage Assessments](#-official-damage-assessments)
+- [Radar Damage Estimates for War Zones](#-radar-damage-estimates-for-war-zones)
+- [Satellite Imagery & Damage Detection (legacy)](#%EF%B8%8F-satellite-imagery--damage-detection-legacy-off-by-default)
   - [Dual-Temporal Change Detection](#dual-temporal-change-detection)
   - [Deep Learning Backends (xBD Benchmark)](#deep-learning-backends-xbd-benchmark)
 - [API Reference](#-api-reference)
@@ -47,7 +49,8 @@ The platform synthesizes **real-time Sentinel-2 multispectral satellite imagery*
 
 - **Interactive Dynamic Evacuation Map**: Real-time Leaflet dashboard displaying base street maps, high-resolution satellite imagery layers, damage polygons, cul-de-sac hazard markers, and verified shelter pins.
 - **Graph-Snapping & Street Name Resolution**: Automatically resolves unnamed footpaths and transit huts into human-readable locations (e.g., *"Transit Shelter on Seymour Road"*, *"Shelter on Washington Street"*).
-- **Damage-Weighted Pathfinding**: Computes walk and drive routes that penalize and steer around flood zones, structural collapses, and blocked road segments.
+- **Official Damage Data**: Pulls graded damage from Copernicus EMS automatically and imports UNOSAT assessments, and says plainly when no assessment covers an area.
+- **Damage-Weighted Pathfinding**: Computes walk and drive routes that avoid officially destroyed roads, penalize damaged ones, and warn about damaged buildings along the way.
 - **Multi-Route Diversity**: Generates up to 3 distinct topological alternatives so that if one arterial avenue becomes compromised in an emergency, evacuees have pre-calculated alternates.
 - **Fail-Safe Offline/Resilient Ingestion**: 3-tier road harvesting engine with automatic fallback from Overpass API mirrors to recursive 2×2 Core OpenStreetMap chunked downloads.
 - **Static 5 km Satellite Corridor Mode**: Generates 10-meter-per-pixel annotated Sentinel-2 imagery with scale bars, impassable alerts, and civilian next-steps instructions.
@@ -82,18 +85,20 @@ flowchart TD
     subgraph Django ["Django 6.1 Application Layer"]
         Views["API Views (finder/views.py)"]
         Auth["User Authentication & Session Management"]
-        ShelterModel["Shelter Database Model"]
+        ShelterModel["Shelter & Damage Dataset Models"]
     end
 
     subgraph Engine ["Evacuation & Damage Processing Pipeline"]
         OSMHarvest["3-Tier Road Harvester (evacuation_engine.py)"]
         ShelterFinder["OSM Overpass / Core Shelter Ingestion (shelters.py)"]
         GraphEngine["NetworkX Topology & Cost Modeler"]
-        DamageCV["Computer Vision & Sentinel-2 Differencing (damage.py)"]
+        OfficialDamage["Official Damage: Copernicus EMS + UNOSAT (official_damage.py)"]
+        DamageCV["Legacy Sentinel-2 Differencing, off by default (damage.py)"]
         DamageML["xBD Dual-Temporal Deep Learning (xbd_s12_damage.py)"]
     end
 
     subgraph External ["External Geospatial & Remote Sensing APIs"]
+        CEMS["Copernicus EMS Rapid Mapping API"]
         STAC["Microsoft Planetary Computer Sentinel-2 L2A"]
         Overpass["Overpass API Mirrors"]
         CoreOSM["OpenStreetMap Core API 0.6"]
@@ -103,7 +108,11 @@ flowchart TD
     UI <-->|"JSON / GeoJSON"| Views
     GeocodeUI -->|"Search"| Nominatim
     Views --> ShelterFinder
-    Views --> DamageCV
+    Views --> OfficialDamage
+    OfficialDamage <-->|"Grading products"| CEMS
+    OfficialDamage <-->|"Imported UNOSAT datasets"| ShelterModel
+    OfficialDamage -->|"Graded roads"| GraphEngine
+    Views -.->|"if enabled"| DamageCV
     Views --> OSMHarvest
     DamageCV <-->|"STAC Queries"| STAC
     DamageCV --> DamageML
@@ -176,7 +185,89 @@ To help civilians and aid workers visually verify safe corridors and shelter acc
 
 ---
 
-## 🛰️ Satellite Imagery & Damage Detection
+## 🧱 Official Damage Assessments
+
+The map and routing use **damage graded by analysts** from very high-resolution imagery, from two sources ([`official_damage.py`](official_damage.py)):
+
+| Source | Coverage | How it gets in |
+|---|---|---|
+| **Copernicus EMS Rapid Mapping** | Natural disasters (floods, earthquakes, wildfires, storms) where an activation produced a *grading* product | Fetched **automatically** from the public API for each evacuation zone; cached under `cache/copernicus/` |
+| **UNOSAT** (or any similar dataset) | Conflicts and disasters, e.g. Ukraine (Kharkiv, Mariupol, Irpin) | **Imported by an admin** from a downloaded file (e.g. from [HDX](https://data.humdata.org/)) |
+
+Grades are normalised to **destroyed**, **damaged** and **possibly damaged**, and each feature is a **road**, **building** or **area** (e.g. a UNOSAT 500 m grid cell):
+- **Roads change routes.** OSM edges within 10 m of a graded road match it: ≥ 50% *destroyed* blocks the edge, *damaged* adds `5 × fraction` to its cost, *possibly damaged* adds `1 × fraction`.
+- **Buildings and areas only warn.** They are drawn on the map and listed on route cards ("Passes 3 destroyed buildings", "Crosses 1 area with damaged buildings"), but never change a route, because building damage is not evidence that a road is impassable.
+- **No coverage is stated plainly.** Where no assessment covers the zone, route cards say *"No official damage data for this area"*, never "no damage". The footer names every source used, with its imagery date and attribution.
+
+### Importing a UNOSAT dataset
+In the Django admin, add a **Damage dataset** and upload the file, or use the command line:
+
+```bash
+python manage.py import_damage kharkiv_23march2022_rda.zip --name "UNOSAT North Kharkiv RDA" --source unosat --date 2022-03-23 --attribution "UNOSAT / UNITAR, CC BY-SA" --license "CC BY-SA"
+```
+
+Accepted formats: zipped shapefile, GeoJSON, GeoPackage, KML, or a zipped File Geodatabase, in any coordinate system. The damage column is detected automatically: Copernicus `damage_gra`, UNOSAT `Main_Damage_Site_Class` (`Main_Dam*`; codes 1 destroyed, 2–3 and 14 damaged, 6 no visible damage), or any column with values such as "Destroyed". Rows with unrecognised codes are counted in the import summary and skipped, never guessed. For files with no damage column at all (e.g. UNOSAT El Fasher, where every polygon is a destroyed structure), set one grade for every feature with `--grade destroyed` or the admin's *Grade if missing* field. Respect each dataset's license (UNOSAT data on HDX is typically CC BY-SA or CC BY-IGO) and keep its attribution.
+
+---
+
+## 📡 Radar Damage Estimates for War Zones
+
+Official assessments only exist where someone has published one. Inside configured **conflict regions**, [`radar_damage.py`](radar_damage.py) adds a low-confidence **estimate** from Sentinel-1 radar, which sees through clouds and at night.
+
+| Region | Pre-war reference date |
+|---|---|
+| Ukraine | 2022-02-24 |
+| Gaza Strip | 2023-10-07 |
+| Lebanon | 2024-09-23 |
+| Iran | 2025-06-13 |
+| Sudan | 2023-04-15 |
+| Afghanistan | 2021-05-01 |
+
+Regions are rough bounding boxes, editable under **Conflict regions** in the admin. Where boxes overlap, the smallest wins. Syria and Yemen are not included because their wars began before Sentinel-1 launched in 2014, so there is no pre-war radar baseline. **Sudan has almost no Sentinel-1 coverage** (0-1 scenes in the pre-war year at Khartoum and El Fasher), so its estimates will usually report "not enough radar scenes".
+
+**Two layers per zone:**
+- **War's first 3 months** (purple): the year before the war compared with its first 90 days. Cached permanently.
+- **New change in the last 12 months** (pink): the year before the last 90 days compared with the last 90 days. Recomputed weekly.
+
+Comparing pre-war data directly with today does **not** work for long wars: in Kharkiv about 40% of the built-up area "changed" between 2021 and 2026 (ordinary urban change, rebuilding, and a different Sentinel-1 satellite pair), drowning out the damage signal.
+
+**Method:** Sentinel-1 RTC VV/VH backscatter (10 m) from Microsoft Planetary Computer, up to 3 orbit tracks with up to 30 + 15 scenes each. A gradient-boosted classifier ([`models/radar_damage_model.joblib`](models/), scikit-learn) scores every pixel from 24 change features ([`radar_damage.pixel_features`](radar_damage.py)). If the model can't be loaded, the app falls back to the best hand-tuned statistic: change in mean backscatter relative to the pixel's pre-war variability. Only ESA WorldCover built-up pixels count. If more than 30% of the built-up area is flagged, the layer is withheld as systematic noise. Uncached zones are computed in a background thread (about 30-60 s); the map shows a toast and refreshes itself when they're ready.
+
+### Accuracy (measured, reproducible)
+
+[`evaluation/`](evaluation/) scores every method against UNOSAT damage labels at **pixel level on building footprints** (positives: buildings within 10 m of a UNOSAT *destroyed*/*severe* label; negatives: buildings > 100 m from any damage label). Settings and training used only the 7 **dev** cities; the 6 **test** sites were scored once at the end.
+
+| Held-out test site | Previous t-test | Tuned statistic | **Trained model** |
+|---|---|---|---|
+| Avdiivka | 0.63 | 0.63 | 0.58 |
+| Gaza City | 0.59 | 0.73 | 0.72 |
+| Khan Younis | 0.61 | 0.69 | 0.61 |
+| Lysychansk | 0.74 | 0.81 | 0.82 |
+| Moschun | 0.28 | 0.58 | 0.81 |
+| Sievierodonetsk | 0.53 | 0.64 | 0.65 |
+| **Mean AUC** (0.5 = chance) | **0.56** | **0.68** | **0.70** |
+| Damaged buildings caught at 2% false alarms | 10% | 15% | 20% |
+
+Dev cities: Chernihiv, Hostomel, Irpin, Kharkiv, Mariupol, Rubizhne, Volnovakha (model leave-one-city-out AUC 0.77). The biggest single gain came from measuring change against *pre-war variability* instead of Welch's t (dev AUC 0.59 → 0.72): with only 3-8 post-war scenes, the post-war variance is noisy and damaged pixels become erratic, which shrinks Welch's t exactly where the damage is.
+
+**Limits, honestly:** the cutoffs for "possibly damaged" / "damaged" were calibrated on dev cities for 2% / 0.5% false alarms, but they don't transfer evenly. On test sites the "possibly damaged" level caught 0-48% of damaged buildings with 0-22% false alarms (worst in Gaza City, where some "false alarms" may be damage UNOSAT hadn't labelled yet). Isolated strikes on single buildings, typical of central Kyiv, are rarely detected at 10 m. Estimates are therefore labelled *"radar, low confidence"*, drawn with dashed outlines, and **never change routes**; they only add warnings such as *"Passes 1 area of estimated new change in the last 12 months"*. Disable with `RADAR_DAMAGE_ESTIMATES = False`.
+
+**Reproduce:** download the evaluation data into one folder: ETH Zurich's `unosat_labels.geojson` and `unosat_aois.geojson` ([Zenodo 15088349](https://zenodo.org/records/15088349), CC BY 4.0) and UNOSAT's Gaza CDA of 26 Nov 2023 saved as `gaza_cda_nov2023.zip` ([HDX](https://data.humdata.org/), CC BY-SA). Then run:
+
+```bash
+python evaluation/radar_eval.py fetch --data DATA_DIR
+python evaluation/experiments.py --data DATA_DIR --part all
+python evaluation/experiments.py --data DATA_DIR --part ml --best "{\"stat\": \"zpre\", \"tracks\": 3, \"pol\": \"max\", \"n_base\": null, \"n_post\": null}" --save-model models/radar_damage_model.joblib
+python evaluation/calibrate.py --data DATA_DIR
+```
+
+The model's metrics, thresholds and training sites are stored next to it in `models/radar_damage_model.json`.
+
+---
+
+## 🛰️ Satellite Imagery & Damage Detection (legacy, off by default)
+
+> These Sentinel-2 estimates are **not used for the map or routing** unless `SATELLITE_DAMAGE_IN_ROUTING = True`. At 10 m per pixel, true-colour change detection cannot tell damage from clouds, haze or lighting. They remain available through `/api/damage` and `/api/annotate`.
 
 ### Dual-Temporal Change Detection
 The platform queries Sentinel-2 Level-2A surface reflectance data through Microsoft Planetary Computer STAC:
@@ -190,7 +281,7 @@ For building-level damage, the system optionally supports the prs-eth xBD-S12 mo
 - **Damage Severity Scale**: Classifies buildings into *No Damage*, *Minor Damage*, *Major Damage*, and *Destroyed*.
 - **Display only**: Damaged-building polygons are shown on the map but are **not** used to block roads, because building damage is not evidence that a road is impassable.
 
-**How damage affects routing** (heuristic backend): each edge costs `length × (1 + 5 × damage_fraction)`, where `damage_fraction` is the share of the edge inside damage polygons. Edges that are ≥ 50% damaged, tagged `highway=construction`, or tagged `access=no` are blocked entirely.
+**How estimated damage affects routing** (only when enabled): each edge costs `length × (1 + 5 × damage_fraction)`, where `damage_fraction` is the share of the edge inside damage polygons. Edges that are ≥ 50% damaged, tagged `highway=construction`, or tagged `access=no` are blocked entirely.
 
 ---
 
@@ -222,7 +313,17 @@ GET /api/context?bbox={west},{south},{east},{north}&mode={walk|drive}
       "node": 12176978895
     }
   ],
-  "dead_ends": {
+  "damage_sources": [
+    {
+      "name": "UNOSAT North Kharkiv RDA",
+      "provider": "UNOSAT",
+      "date": "2022-03-23",
+      "attribution": "UNOSAT / UNITAR, CC BY-SA",
+      "url": ""
+    }
+  ],
+  "damage_notes": [],
+  "stranded": {
     "type": "FeatureCollection",
     "features": [...]
   },
@@ -257,7 +358,8 @@ Content-Type: application/json
       "eta_display": "18 min",
       "damage_exposure_m": 0,
       "damage_assessed": true,
-      "rank_reason": "Shortest path to nearest shelter, no damage exposure",
+      "damage_warnings": ["Crosses 1 area with damaged buildings"],
+      "rank_reason": "Shortest path to nearest shelter, no damaged roads",
       "shelter": {
         "name": "Shelter on Seymour Road",
         "lat": 38.048157,
@@ -274,7 +376,7 @@ Content-Type: application/json
     }
   ],
   "warnings": [],
-  "disclaimer": "Damage is estimated from satellite imagery and may be wrong. Follow official guidance."
+  "disclaimer": "Damage data comes from Copernicus EMS and UNOSAT satellite assessments, which may be outdated, incomplete, or missing for this area. Follow official guidance."
 }
 ```
 
@@ -353,7 +455,7 @@ The container applies database migrations on start. Open [http://localhost:8000/
 The codebase includes exhaustive test suites covering graph routing, reachability algorithms, ML classifiers, and API endpoints:
 
 ```bash
-# Run Django integration & security tests (39 tests)
+# Run Django integration, engine, official-damage & radar tests (76 tests)
 python manage.py test
 
 # Run Evacuation Engine synthetic graph unit tests (24 tests)
@@ -367,6 +469,8 @@ python test_damage.py
 - **Spur Pruning**: Validates iterative degree-1 reduction while safeguarding start and shelter nodes.
 - **Route Dead Ends**: Only spurs branching off a chosen route are marked, and a dead end never shares a node, edge, or drawn geometry with a route.
 - **Reachability Inversion**: Verifies disconnected nodes and damage-cut components are flagged without producing false positives on undamaged maps.
+- **Official Damage**: Grade normalisation (Copernicus wording, UNOSAT codes), file import (reprojected UNOSAT grids, railway filtering), Copernicus lookup with caching and outage handling, destroyed roads blocking routes, and building/area warnings that never reroute.
+- **Radar Estimates**: the shipped model loads and matches the app's features, fallbacks (tuned statistic, then t-test), change detection, zone-wide shift removal, built-up masking, the systematic-noise cutoff, both layers' date windows, region matching, caching, background computation, and a guarantee that estimates never affect routing.
 - **Route Diversity**: Enforces mathematical Jaccard edge-overlap bounds.
 - **OSM Fallbacks**: Validates recursive 2×2 chunking when Overpass mirrors fail or rate limit.
 
@@ -378,14 +482,14 @@ This platform was built adhering to strict ethical guidelines:
 
 1. **No Weapon or Force Detection**: The system does **not** locate, track, or identify military vehicles, weapons, fortifications, or combat personnel.
 2. **Zero Coordinate Retention**: Searched addresses, IP addresses, and client geolocation coordinates are **never logged or saved to the database**.
-3. **No Commercial Imagery Tasking**: Relies entirely on free, public European Space Agency Copernicus Sentinel-2 data published via STAC.
+3. **No Commercial Imagery Tasking**: Relies entirely on free, public data: Copernicus EMS and UNOSAT damage assessments, and ESA Copernicus Sentinel-2 imagery published via STAC.
 4. **Honest Uncertainty**: Satellite imagery can be obscured by clouds, smoke, or sensor revisit intervals. The platform explicitly highlights resolution limits (e.g. potholes and trip hazards marked as *"not visible at 10m"*), date of capture, and disclaimers advising civilians to prioritize verified on-the-ground official directions.
 
 ---
 
 ## 🙏 Acknowledgments
 
-Built for **AFS x VT** with support from **Accenture Federal Services** and Virginia Tech. Satellite data courtesy of ESA Copernicus via Microsoft Planetary Computer; map data © OpenStreetMap contributors.
+Built for **AFS x VT** with support from **Accenture Federal Services** and Virginia Tech. Damage assessments © European Union, Copernicus Emergency Management Service, and UNOSAT / UNITAR (per each dataset's license). Satellite data courtesy of ESA Copernicus via Microsoft Planetary Computer; map data © OpenStreetMap contributors.
 
 ---
 

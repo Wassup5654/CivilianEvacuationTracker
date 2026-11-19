@@ -5,3 +5,4 @@ scipy>=1.11
 networkx>=3.2
 osmnx>=2.0
 shapely>=2.0
+scikit-learn>=1.5

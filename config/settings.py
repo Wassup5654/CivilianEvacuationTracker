@@ -140,6 +140,15 @@ DAMAGE_MODEL_NAME = "prs-eth/xbd-s12_dmg_seed1"
 DAMAGE_BACKEND = "heuristic"  # "heuristic" or "xbd_s12"
 DAMAGE_PROBABILITY_THRESHOLD = 0.40
 DAMAGE_MIN_AREA_PX = 16  # 16 px = 1600 m^2 at 10 m native Sentinel-2 resolution
+# The map and routing use official damage assessments (Copernicus EMS, fetched
+# live, plus datasets such as UNOSAT imported in the admin). The Sentinel-2
+# colour-comparison estimate above is unreliable at 10 m (clouds, lighting),
+# so it is excluded from the map and routing unless this is True.
+SATELLITE_DAMAGE_IN_ROUTING = False
+# Sentinel-1 radar change estimates (radar_damage.py) inside the war zones
+# listed under "Conflict regions" in the admin. Shown as low-confidence
+# estimates; they add route-card warnings but never change routes.
+RADAR_DAMAGE_ESTIMATES = True
 
 # Routing Engine Configuration
 ROUTE_DAMAGE_ALPHA = 5.0            # cost multiplier for damage fraction

@@ -8,8 +8,9 @@
   const ROUTE_LABELS = ["Route 1 (best)", "Route 2", "Route 3"];
   const ROUTE_DASHES = ["", "16 8", "8 6 2 6"];
   const ROUTE_WEIGHTS = [6, 5, 5];
-  const DAMAGE_FILL = "rgba(220, 38, 38, 0.4)";
   const DAMAGE_STROKE = "#DC2626";
+  const GRADE_COLORS = { destroyed: "#7F1D1D", damaged: "#DC2626", possibly_damaged: "#F59E0B" };
+  const ESTIMATE_COLORS = { war_start: "#7C3AED", recent: "#DB2777" };
   const DEAD_END_COLOR = "#6B7280";
   const SHELTER_COLOR = "#22C55E";
   const ZONE_COLOR = "#2563EB";
@@ -291,9 +292,7 @@
       .then(function (routeData) {
         if (token !== fetchToken || !routeData) return;
         renderRoutes(routeData);
-        if (routeData.imagery_date && imgDate) {
-          imgDate.textContent = "Imagery: " + routeData.imagery_date + " · OSM data via Overpass";
-        }
+        scheduleRadarRefresh(routeData.radar_pending, token);
       })
       .catch(function (err) {
         if (token !== fetchToken) return;
@@ -328,6 +327,7 @@
       .then(function (ctx) {
         if (token !== fetchToken || !ctx) return;
         renderContextLayers(ctx);
+        scheduleRadarRefresh(ctx.radar_pending, token);
       })
       .catch(function (err) {
         console.warn("Context fetch error:", err);
@@ -340,19 +340,48 @@
     strandedLayer.clearLayers();
     shelterLayer.clearLayers();
 
-    // Damage polygons (GeoJSON)
+    // Official damage (Copernicus EMS / UNOSAT), coloured by grade
     if (ctx.damage && ctx.damage.features && ctx.damage.features.length > 0) {
       L.geoJSON(ctx.damage, {
-        style: function () {
-          return {
-            fillColor: "#DC2626",
-            fillOpacity: 0.4,
-            color: DAMAGE_STROKE,
-            weight: 2
-          };
+        style: function (feature) {
+          var p = feature.properties || {};
+          if (p.estimated) {
+            var ec = ESTIMATE_COLORS[p.layer] || ESTIMATE_COLORS.war_start;
+            return { color: ec, weight: 2, dashArray: "5 4", fillColor: ec,
+                     fillOpacity: p.grade === "damaged" ? 0.3 : 0.15 };
+          }
+          var color = GRADE_COLORS[p.grade] || DAMAGE_STROKE;
+          if (p.kind === "road") return { color: color, weight: 6, opacity: 0.85 };
+          if (p.kind === "area") return { color: color, weight: 1.5, fillColor: color, fillOpacity: 0.12, dashArray: "4 3" };
+          return { color: color, weight: 1, fillColor: color, fillOpacity: 0.6 };
+        },
+        pointToLayer: function (feature, latlng) {
+          var color = GRADE_COLORS[(feature.properties || {}).grade] || DAMAGE_STROKE;
+          return L.circleMarker(latlng, { radius: 4, color: color, weight: 1, fillColor: color, fillOpacity: 0.8 });
+        },
+        onEachFeature: function (feature, layer) {
+          var p = feature.properties || {};
+          if (p.estimated) {
+            layer.bindPopup(
+              "<strong>Estimate, low confidence</strong><br>" +
+              escapeHtml(p.layer === "recent" ? "New radar change in the last 12 months"
+                                              : "Radar change in the war's first 3 months") +
+              "<br>" + escapeHtml(p.label || "") +
+              "<br><small>" + escapeHtml(p.source || "") + ", " + escapeHtml(p.date || "") +
+              ". Rebuilding or construction can also cause change.</small>"
+            );
+            return;
+          }
+          var what = p.kind === "road" ? "Road" : (p.kind === "area" ? "Assessed area" : "Building");
+          layer.bindPopup(
+            "<strong>" + escapeHtml(p.grade_label || "Damage") + " · " + what + "</strong>" +
+            (p.label ? "<br>" + escapeHtml(p.label) : "") +
+            "<br><small>" + escapeHtml(p.source || "") + (p.date ? ", imagery " + escapeHtml(p.date) : "") + "</small>"
+          );
         }
       }).addTo(damageLayer);
     }
+    renderDamageSources(ctx.damage_sources, ctx.damage_assessed);
 
     // Stranded edges (roads cut off from every shelter by damage).
     // Dead ends come from /api/routes instead — see renderRouteDeadEnds().
@@ -411,6 +440,45 @@
         marker.addTo(shelterLayer);
       });
     }
+  }
+
+  // ── Radar estimates computing in the background: refresh until they're ready ──
+  var radarTimer = null, radarRetries = 0;
+  function scheduleRadarRefresh(pending, token) {
+    if (!pending) { radarRetries = 0; return; }
+    if (radarTimer || radarRetries >= 8) return;
+    radarRetries += 1;
+    showToast("Computing radar damage estimate for this area… the map will update shortly.", 5000);
+    radarTimer = setTimeout(function () {
+      radarTimer = null;
+      if (token === fetchToken) fetchContextAndRoutes();
+    }, 25000);
+  }
+
+  // ── Footer: which official damage assessments cover this area ──
+  function renderDamageSources(sources, assessed) {
+    if (!imgDate) return;
+    imgDate.textContent = "";
+    if (!sources || sources.length === 0) {
+      imgDate.textContent = assessed === false || !sources
+        ? "Damage data: no official damage assessment (Copernicus EMS or imported UNOSAT) covers this area."
+        : "";
+      return;
+    }
+    imgDate.appendChild(document.createTextNode("Damage data: "));
+    sources.forEach(function (s, i) {
+      if (i > 0) imgDate.appendChild(document.createTextNode(" · "));
+      var label = s.name + (s.date ? " (imagery " + s.date + ")" : "");
+      if (s.url) {
+        var a = document.createElement("a");
+        a.href = s.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+        a.textContent = label;
+        imgDate.appendChild(a);
+      } else {
+        imgDate.appendChild(document.createTextNode(label));
+      }
+      if (s.attribution) imgDate.appendChild(document.createTextNode(" — " + s.attribution));
+    });
   }
 
   // ── Dead ends branching off the chosen routes ("don't turn here") ──
@@ -476,8 +544,8 @@
 
       var shelterName = route.shelter ? (route.shelter.name || "Shelter") : "—";
       var dmgText = route.damage_exposure_m > 0
-        ? (route.damage_exposure_m + " m through damage")
-        : "No damage exposure";
+        ? (route.damage_exposure_m + " m on damaged roads")
+        : "No damaged roads";
 
       card.innerHTML =
         '<div class="route-card-header">' +
@@ -490,10 +558,13 @@
             (currentMode === "walk" ? "walking" : "driving") + '</span>' +
         '</div>' +
         (route.damage_assessed === false
-          ? '<div class="route-card-damage" style="background:#f3f4f6;color:#6b7280;border-left:3px solid #9ca3af">Damage not assessed</div>'
+          ? '<div class="route-card-damage" style="background:#f3f4f6;color:#6b7280;border-left:3px solid #9ca3af">No official damage data for this area</div>'
           : (route.damage_exposure_m > 0
             ? '<div class="route-card-damage">' + dmgText + '</div>'
             : '')) +
+        (route.damage_warnings || []).map(function (w) {
+          return '<div class="route-card-damage">⚠ ' + escapeHtml(w) + '</div>';
+        }).join("") +
         '<div class="route-card-reason">' + escapeHtml(route.rank_reason || "") + '</div>' +
         (route.shelter && route.shelter.lat
           ? '<div class="route-card-actions">' +
