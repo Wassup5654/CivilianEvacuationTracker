@@ -28,7 +28,9 @@
   let lastStreetViewQuery = null;
 
   // Layer groups
-  let damageLayer, deadEndLayer, shelterLayer, routeLayers;
+  // deadEndLayer holds two sub-groups so the parallel context/routes fetches
+  // never clear each other's features.
+  let damageLayer, deadEndLayer, strandedLayer, routeDeadEndLayer, shelterLayer, routeLayers;
 
   // ── DOM refs ──
   const form        = document.getElementById("lookup");
@@ -107,6 +109,8 @@
     // Layer groups
     damageLayer  = L.layerGroup().addTo(map);
     deadEndLayer = L.layerGroup().addTo(map);
+    strandedLayer = L.layerGroup().addTo(deadEndLayer);
+    routeDeadEndLayer = L.layerGroup().addTo(deadEndLayer);
     shelterLayer = L.layerGroup().addTo(map);
     routeLayers  = L.layerGroup().addTo(map);
 
@@ -294,6 +298,8 @@
       .catch(function (err) {
         if (token !== fetchToken) return;
         console.error("Route fetch error:", err);
+        routeLayers.clearLayers();
+        routeDeadEndLayer.clearLayers();
         var msg = err.message || "Area too large or map servers busy. Try a smaller area.";
         showToast(msg, 5000);
         routeCards.innerHTML =
@@ -331,7 +337,7 @@
   // ── Render context layers ──
   function renderContextLayers(ctx) {
     damageLayer.clearLayers();
-    deadEndLayer.clearLayers();
+    strandedLayer.clearLayers();
     shelterLayer.clearLayers();
 
     // Damage polygons (GeoJSON)
@@ -348,31 +354,8 @@
       }).addTo(damageLayer);
     }
 
-    // Dead ends (GeoJSON lines)
-    if (ctx.dead_ends && ctx.dead_ends.features && ctx.dead_ends.features.length > 0) {
-      L.geoJSON(ctx.dead_ends, {
-        style: function () {
-          return {
-            color: DEAD_END_COLOR,
-            weight: 3,
-            dashArray: "6 4",
-            opacity: 0.8
-          };
-        },
-        pointToLayer: function (feature, latlng) {
-          return L.marker(latlng, {
-            icon: L.divIcon({
-              className: "dead-end-x",
-              html: "✕",
-              iconSize: [14, 14],
-              iconAnchor: [7, 7]
-            })
-          });
-        }
-      }).addTo(deadEndLayer);
-    }
-
-    // Stranded edges
+    // Stranded edges (roads cut off from every shelter by damage).
+    // Dead ends come from /api/routes instead — see renderRouteDeadEnds().
     if (ctx.stranded && ctx.stranded.features && ctx.stranded.features.length > 0) {
       L.geoJSON(ctx.stranded, {
         style: function () {
@@ -383,7 +366,7 @@
             opacity: 0.6
           };
         }
-      }).addTo(deadEndLayer);
+      }).addTo(strandedLayer);
     }
 
     // Shelters (green markers)
@@ -430,10 +413,33 @@
     }
   }
 
+  // ── Dead ends branching off the chosen routes ("don't turn here") ──
+  // The server computes these after routing and guarantees none overlaps a route.
+  function renderRouteDeadEnds(deadEnds) {
+    routeDeadEndLayer.clearLayers();
+    if (!deadEnds || !deadEnds.features || deadEnds.features.length === 0) return;
+    L.geoJSON(deadEnds, {
+      style: function () {
+        return { color: DEAD_END_COLOR, weight: 3, dashArray: "6 4", opacity: 0.8 };
+      },
+      pointToLayer: function (feature, latlng) {
+        return L.marker(latlng, {
+          icon: L.divIcon({
+            className: "dead-end-x",
+            html: "✕",
+            iconSize: [14, 14],
+            iconAnchor: [7, 7]
+          })
+        }).bindTooltip("Dead end — don't turn here", { direction: "top" });
+      }
+    }).addTo(routeDeadEndLayer);
+  }
+
   // ── Render routes ──
   function renderRoutes(data) {
     routeLayers.clearLayers();
     routeCards.innerHTML = "";
+    renderRouteDeadEnds(data.dead_ends);
 
     var routes = data.routes || [];
     if (routes.length === 0) {

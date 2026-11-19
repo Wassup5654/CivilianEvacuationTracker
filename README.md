@@ -148,7 +148,9 @@ Residential cul-de-sacs and dead-end alleys waste critical minutes during evacua
 - The user's departure location (v_start).
 - All registered shelter nodes (S).
 
-All pruned spurs are rendered on the map with distinctive **"X"** terminus icons so evacuees avoid dead ends.
+Dead ends are identified **after** routes are chosen, and only the spurs that branch directly off a chosen route are drawn: the spur's first segment as a dashed line with an **"X"** at its end, so evacuees can see which turns *not* to take. Dead ends elsewhere on the map are not drawn.
+
+A dead end **never overlaps a route**. A spur node or spur edge that is part of any route is rejected, the drawn spur is clipped to stay at least 6 m from every route line, and any spur whose end lies within that margin (for example a sidewalk stub mapped alongside the street) is dropped. The map's stranded overlay likewise shows only roads that damage cut off from every shelter.
 
 ### 4. Diverse Multi-Path Generation
 Rather than computing a single path that could be blocked by real-time localized hazards, the engine generates **up to 3 topologically distinct routes**:
@@ -351,10 +353,10 @@ The container applies database migrations on start. Open [http://localhost:8000/
 The codebase includes exhaustive test suites covering graph routing, reachability algorithms, ML classifiers, and API endpoints:
 
 ```bash
-# Run Django integration & security tests (32 tests)
+# Run Django integration & security tests (39 tests)
 python manage.py test
 
-# Run Evacuation Engine synthetic graph unit tests (17 tests)
+# Run Evacuation Engine synthetic graph unit tests (24 tests)
 python test_evacuation_engine.py
 
 # Run Damage detection & ML backend tests (4 tests)
@@ -363,6 +365,7 @@ python test_damage.py
 
 ### Test Coverage Highlights
 - **Spur Pruning**: Validates iterative degree-1 reduction while safeguarding start and shelter nodes.
+- **Route Dead Ends**: Only spurs branching off a chosen route are marked, and a dead end never shares a node, edge, or drawn geometry with a route.
 - **Reachability Inversion**: Verifies disconnected nodes and damage-cut components are flagged without producing false positives on undamaged maps.
 - **Route Diversity**: Enforces mathematical Jaccard edge-overlap bounds.
 - **OSM Fallbacks**: Validates recursive 2×2 chunking when Overpass mirrors fail or rate limit.

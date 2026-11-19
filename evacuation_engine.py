@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import networkx as nx
+import shapely
 from shapely.geometry import LineString, Point, mapping
 from shapely.strtree import STRtree
 
@@ -581,6 +582,138 @@ def dead_end_geojson(
     return {"type": "FeatureCollection", "features": features}
 
 
+def damage_cut_nodes(
+    G: nx.MultiDiGraph,
+    blocked_edges: set[tuple[int, int, int]],
+    shelter_nodes: set[int],
+) -> set[int]:
+    """Nodes that could reach a shelter on the intact network but not after damage.
+
+    Used for map display, so fragments that were never connected to a shelter
+    (common in raw OSM extracts) and areas behind roads tagged access=no or
+    highway=construction (gated compounds, closed works) are not drawn as
+    "stranded". Must be called after assign_edge_costs().
+    """
+    if not shelter_nodes or not blocked_edges:
+        return set()
+    tag_blocked = {
+        (u, v, k) for u, v, k in blocked_edges
+        if G.has_edge(u, v, k) and G.edges[u, v, k].get("damage_frac", 0.0) < BLOCK_THRESHOLD
+    }
+    if len(tag_blocked) == len(blocked_edges):
+        return set()  # nothing was blocked by damage
+    return find_stranded_nodes(G, blocked_edges, shelter_nodes) - find_stranded_nodes(
+        G, tag_blocked, shelter_nodes
+    )
+
+
+# Spur geometry closer than this to a drawn route is treated as overlapping it.
+ROUTE_CLEARANCE_M = 6.0
+# Spur segments shorter than this after clipping are not worth drawing.
+MIN_DEAD_END_DRAW_M = 3.0
+
+
+def _edge_line_between(G: nx.MultiDiGraph, a: int, b: int) -> LineString | None:
+    """Geometry of the edge a–b (either direction), oriented to start at node a."""
+    data = G.get_edge_data(a, b) or G.get_edge_data(b, a)
+    if not data:
+        return None
+    line = _edge_line(G, a, b, next(iter(data.values())))
+    if line is None or line.is_empty:
+        return None
+    a_d = G.nodes[a]
+    first, last = line.coords[0], line.coords[-1]
+    if (last[0] - a_d["x"]) ** 2 + (last[1] - a_d["y"]) ** 2 < \
+            (first[0] - a_d["x"]) ** 2 + (first[1] - a_d["y"]) ** 2:
+        line = LineString(list(line.coords)[::-1])
+    return line
+
+
+def route_dead_ends(
+    G: nx.MultiDiGraph,
+    dead_edges: list[tuple[int, int]],
+    route_paths: list[list[int]],
+    route_lines: list[list[list[float]]],
+) -> dict[str, Any]:
+    """Dead ends that branch directly off a chosen route (the "wrong turns").
+
+    Call this AFTER routes are chosen. For every pruned spur whose entry
+    junction lies on a route, emit the spur's first edge (dashed line) and an
+    X marker at its far end, so evacuees can see which turn NOT to take.
+    Spurs elsewhere on the map are ignored.
+
+    No-overlap guarantee — a dead-end feature never coincides with a route:
+      1. the spur node is never a route node, and the spur edge is never a
+         route edge (graph level);
+      2. the drawn line is clipped to lie outside a ROUTE_CLEARANCE_M buffer
+         around every drawn route line, and the X marker must lie outside
+         that buffer too (geometry level, which also covers parallel OSM
+         ways such as sidewalks drawn on top of a street).
+    """
+    empty = {"type": "FeatureCollection", "features": []}
+    if not dead_edges or not route_paths:
+        return empty
+
+    route_nodes: set[int] = set()
+    route_edges: set[tuple[int, int]] = set()
+    for path in route_paths:
+        route_nodes.update(path)
+        route_edges |= _edge_set(path)
+
+    route_geoms = [LineString(c) for c in route_lines if c and len(c) >= 2]
+    clearance_deg = ROUTE_CLEARANCE_M / 111320.0
+    route_buffer = (
+        shapely.unary_union(route_geoms).buffer(clearance_deg) if route_geoms else None
+    )
+
+    # parent[n] = node that n was attached to when pruned (spurs form trees)
+    parent: dict[int, int] = {}
+    for node, nbr in dead_edges:
+        parent.setdefault(node, nbr)
+    removed = set(parent)
+
+    features: list[dict] = []
+    seen: set[int] = set()
+    for spur_node, junction in parent.items():
+        if spur_node in seen:
+            continue
+        # Only spurs entered directly from the route.
+        if junction in removed or junction not in route_nodes:
+            continue
+        # Guarantee 1: graph-level separation from every route.
+        if spur_node in route_nodes or (min(spur_node, junction), max(spur_node, junction)) in route_edges:
+            continue
+
+        line = _edge_line_between(G, junction, spur_node)
+        if line is None:
+            continue
+        tip = Point(G.nodes[spur_node]["x"], G.nodes[spur_node]["y"])
+
+        # Guarantee 2: geometric separation from every drawn route.
+        if route_buffer is not None:
+            if route_buffer.covers(tip):
+                continue
+            line = line.difference(route_buffer)
+            if line.is_empty:
+                continue
+        if line.length * 111320.0 < MIN_DEAD_END_DRAW_M:
+            continue
+
+        seen.add(spur_node)
+        features.append({
+            "type": "Feature",
+            "geometry": mapping(line),
+            "properties": {"kind": "dead_end", "junction": junction},
+        })
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [tip.x, tip.y]},
+            "properties": {"kind": "dead_end_terminus", "junction": junction},
+        })
+
+    return {"type": "FeatureCollection", "features": features}
+
+
 # ── Shelter snapping ──
 
 GENERIC_SHELTER_NAMES = {
@@ -840,9 +973,7 @@ def compute_routes(
             "disclaimer": DISCLAIMER,
         }
 
-    # 4. Dead-end detection
-    protected = {start_node} | shelter_nodes
-    dead_edges = prune_dead_ends(G, protected)
+    # 4. Reachability check (dead ends are identified later, once routes exist)
     stranded = find_stranded_nodes(G, blocked_edges, shelter_nodes)
 
     # Check if start is stranded
@@ -1016,8 +1147,20 @@ def compute_routes(
             "rank_reason": reason,
         })
 
+    # 9. Dead ends — only now that routes are fixed, and only the spurs that
+    #    branch off a chosen route. route_dead_ends() guarantees none of them
+    #    overlaps a route.
+    dead_edges = prune_dead_ends(G, {start_node} | shelter_nodes)
+    dead_ends = route_dead_ends(
+        G,
+        dead_edges,
+        [path for _cost, _shelter, path in chosen],
+        [r["geojson"]["geometry"]["coordinates"] for r in routes_out],
+    )
+
     return {
         "routes": routes_out,
+        "dead_ends": dead_ends,
         "warnings": warnings,
         "disclaimer": DISCLAIMER,
     }

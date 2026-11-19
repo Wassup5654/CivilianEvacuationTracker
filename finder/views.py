@@ -344,8 +344,7 @@ def context_view(request):
     from evacuation_engine import (
         get_cached_graph,
         assign_edge_costs,
-        prune_dead_ends,
-        find_stranded_nodes,
+        damage_cut_nodes,
         dead_end_geojson,
         snap_shelters_to_graph,
     )
@@ -371,36 +370,19 @@ def context_view(request):
     # Damage polygons via Sentinel-2 + xBD detection
     damage_geojson, geo_polygons, damage_assessed = _get_damage_for_bbox(bbox)
 
-    # Dead-end / stranded analysis
+    # Stranded analysis: only roads that damage cut off from every shelter.
+    # Dead ends are NOT computed here; /api/routes returns just the ones that
+    # branch off the chosen routes, after routing.
     snapped = snap_shelters_to_graph(G, shelters)
     shelter_nodes = {s["node"] for s in snapped if "node" in s}
     blocked = assign_edge_costs(G, geo_polygons)
-
-    if not shelter_nodes:
-        # If no shelters are available, do not flag the entire map as dead ends/stranded
-        de_geojson = {"type": "FeatureCollection", "features": []}
-    else:
-        import osmnx as ox
-        center_lat = (bbox[1] + bbox[3]) / 2
-        center_lon = (bbox[0] + bbox[2]) / 2
-        try:
-            center_node = ox.nearest_nodes(G, X=center_lon, Y=center_lat)
-        except Exception:
-            center_node = next(iter(G.nodes)) if G.number_of_nodes() > 0 else None
-
-        protected = shelter_nodes.copy()
-        if center_node is not None:
-            protected.add(center_node)
-
-        dead_edges = prune_dead_ends(G, protected)
-        stranded = find_stranded_nodes(G, blocked, shelter_nodes)
-        de_geojson = dead_end_geojson(G, dead_edges, stranded)
+    stranded_geojson = dead_end_geojson(G, [], damage_cut_nodes(G, blocked, shelter_nodes))
 
     return JsonResponse({
         "damage": damage_geojson,
         "shelters": snapped if snapped else shelters,
-        "dead_ends": de_geojson,
-        "stranded": {"type": "FeatureCollection", "features": []},
+        "dead_ends": {"type": "FeatureCollection", "features": []},
+        "stranded": stranded_geojson,
         "graph_nodes": G.number_of_nodes(),
         "graph_edges": G.number_of_edges(),
         "damage_assessed": damage_assessed,
