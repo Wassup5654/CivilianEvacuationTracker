@@ -644,3 +644,32 @@
   width: 26px !important; height: 26px !important; line-height: 22px; text-align: center;
   font-weight: 700; font-size: 13px; box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
 }
+
+/* ── Live hazards (NASA FIRMS + GDACS) ── */
+.live-hazards { border: 1px solid #FED7AA; background: #FFF7ED; border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; font-size: 12.5px; line-height: 1.45; }
+.live-hazards h3 { margin: 0 0 4px; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: #DC2626; animation: live-pulse 1.6s ease-in-out infinite; }
+@keyframes live-pulse { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+.live-line { margin: 4px 0 0; color: #374151; }
+.live-line.muted { color: #6B7280; font-size: 11.5px; }
+.live-alert { margin: 4px 0; padding: 5px 8px; border-radius: 4px; border-left: 3px solid #16A34A; background: #F0FDF4; }
+.live-alert.level-orange { border-left-color: #EA580C; background: #FFEDD5; }
+.live-alert.level-red { border-left-color: #B91C1C; background: #FEE2E2; }
+.fire-marker { font-size: 16px; line-height: 22px; text-align: center; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5)); opacity: 0.75; }
+.fire-marker.fresh { opacity: 1; font-size: 19px; }
+.fire-swatch { background: radial-gradient(circle, #FDE047 0 30%, #EA580C 60%, #B91C1C 100%); border-radius: 50%; }
+.route-card-hazard { background: #FFF7ED; color: #9A3412; border-left-color: #EA580C; }
+
+/* ── Offline ── */
+.offline-banner { margin: 8px 0 0; padding: 8px 12px; border-radius: 6px; background: #1F2937; color: #F9FAFB; font-size: 13.5px; }
+.saved-areas { margin-top: 8px; border: 1px solid #CBD5E1; border-radius: 8px; padding: 6px 10px; background: #F8FAFC; font-size: 13px; }
+.saved-areas summary { cursor: pointer; font-weight: 600; }
+.saved-list { list-style: none; margin: 6px 0; padding: 0; }
+.saved-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 0; border-top: 1px solid #E2E8F0; }
+.saved-list li strong { flex: 1 1 100%; overflow-wrap: anywhere; }
+.saved-meta { flex: 1 1 auto; color: #64748B; font-size: 12px; }
+.saved-list button { padding: 4px 12px; font-size: 12.5px; }
+.saved-note { color: #64748B; font-size: 11.5px; margin: 4px 0 6px; }
+.saved-copy-note { padding: 6px 8px; margin-bottom: 8px; border-radius: 4px; background: #F1F5F9; border-left: 3px solid #475569; font-size: 12.5px; color: #334155; }
+.offline-tools button { width: 100%; }

@@ -9,6 +9,9 @@
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.16.0/dist/leaflet-geoman.css">
   <link rel="stylesheet" href="{% static 'finder/site.css' %}">
+  <link rel="manifest" href="{% url 'web_manifest' %}">
+  <link rel="icon" href="{% static 'finder/icon.svg' %}" type="image/svg+xml">
+  <meta name="theme-color" content="#1d4ed8">
   {% block extra_head %}{% endblock %}
 </head>
 <body>
@@ -33,6 +36,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.16.0/dist/leaflet-geoman.min.js"></script>
+  <script src="{% static 'finder/pwa.js' %}?v=1"></script>
   {% block extra_js %}{% endblock %}
 </body>
 </html>

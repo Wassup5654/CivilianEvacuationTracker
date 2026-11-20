@@ -402,6 +402,56 @@ def _satellite_damage_for_bbox(bbox: tuple[float, float, float, float]) -> tuple
         return damage_geojson, geo_polygons, False
 
 
+def _live_hazards(bbox) -> dict:
+    """NASA FIRMS + GDACS for the zone; an outage becomes a note, never an error."""
+    try:
+        from live_hazards import hazards_for_bbox
+        return hazards_for_bbox(bbox, wait=False)
+    except Exception as exc:
+        return {"enabled": True, "fires": {"type": "FeatureCollection", "features": []}, "alerts": [],
+                "sources": [], "updated": None, "pending": False,
+                "notes": [f"Live hazard feeds unavailable ({exc.__class__.__name__})."]}
+
+
+@login_required
+def hazards_view(request):
+    """POST /api/hazards {bbox: [w,s,e,n]}: live fire detections and disaster alerts for the zone.
+
+    The map polls this every few minutes. Warnings only: hazards never change routes.
+    """
+    try:
+        bbox = _parse_bbox(_params(request).get("bbox", ""))
+    except (ValueError, TypeError):
+        return JsonResponse({"error": "bbox must be west,south,east,north"}, status=400)
+    return JsonResponse(_live_hazards(bbox))
+
+
+def service_worker(request):
+    """GET /sw.js: the offline service worker, served from the site root so it can control /dashboard/."""
+    from django.conf import settings
+    path = Path(settings.BASE_DIR) / "finder" / "static" / "finder" / "sw.js"
+    resp = HttpResponse(path.read_text(encoding="utf-8"), content_type="application/javascript")
+    resp["Cache-Control"] = "no-cache"
+    resp["Service-Worker-Allowed"] = "/"
+    return resp
+
+
+def web_manifest(request):
+    """GET /manifest.webmanifest: lets browsers install the app and open it offline."""
+    from django.templatetags.static import static
+    return JsonResponse({
+        "name": "Civilian Evacuation Planner",
+        "short_name": "Evacuation",
+        "description": "Safe routes to shelters, damage warnings and offline evacuation plans.",
+        "start_url": "/dashboard/",
+        "scope": "/",
+        "display": "standalone",
+        "background_color": "#ffffff",
+        "theme_color": "#1d4ed8",
+        "icons": [{"src": static("finder/icon.svg"), "sizes": "any", "type": "image/svg+xml", "purpose": "any"}],
+    }, content_type="application/manifest+json")
+
+
 @login_required
 def context_view(request):
     """POST /api/context {bbox: [w,s,e,n] | "w,s,e,n", mode: "walk"|"drive"} (GET still accepted)
@@ -455,6 +505,7 @@ def context_view(request):
     stranded_geojson = dead_end_geojson(G, [], damage_cut_nodes(G, blocked, shelter_nodes))
 
     return JsonResponse({
+        "hazards": _live_hazards(bbox),
         "damage": damage["geojson"],
         "damage_sources": damage["sources"],
         "damage_notes": damage["notes"],
@@ -542,6 +593,13 @@ def routes_view(request):
     )
     from official_damage import annotate_routes
     annotate_routes(result, damage["features"])
+    hazards = _live_hazards(bbox)
+    try:
+        from live_hazards import annotate_routes_with_hazards
+        annotate_routes_with_hazards(result, hazards)
+    except Exception:
+        pass
+    result["hazards"] = hazards
     result["damage_sources"] = damage["sources"]
     result["radar_pending"] = damage["radar_pending"]
     if damage["notes"]:

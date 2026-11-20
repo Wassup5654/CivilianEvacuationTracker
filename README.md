@@ -31,6 +31,8 @@ The platform combines **official damage assessments from Copernicus EMS and UNOS
 - [Official Damage Assessments](#-official-damage-assessments)
 - [Radar Damage Estimates for War Zones](#-radar-damage-estimates-for-war-zones)
 - [Suggested Shelter Sites (Relief Planning)](#-suggested-shelter-sites-relief-planning)
+- [Live Hazards](#-live-hazards)
+- [Offline Use](#-offline-use)
 - [Satellite Imagery & Damage Detection (legacy)](#%EF%B8%8F-satellite-imagery--damage-detection-legacy-off-by-default)
   - [Dual-Temporal Change Detection](#dual-temporal-change-detection)
   - [Deep Learning Backends (xBD Benchmark)](#deep-learning-backends-xbd-benchmark)
@@ -57,6 +59,8 @@ The platform combines **official damage assessments from Copernicus EMS and UNOS
 - **Fail-Safe Offline/Resilient Ingestion**: 3-tier road harvesting engine with automatic fallback from Overpass API mirrors to recursive 2×2 Core OpenStreetMap chunked downloads.
 - **Static 5 km Satellite Corridor Mode**: Generates 10-meter-per-pixel annotated Sentinel-2 imagery with scale bars, impassable alerts, and civilian next-steps instructions.
 - **Street-Level Imagery**: On-demand Google Street View for any shelter or route destination, embedded in a sliding drawer, with a one-click link to the fullscreen panorama in Google Maps. No client-side API token is required.
+- **Live Hazards**: Satellite fire and heat detections from NASA FIRMS (refreshed every 30 minutes) and GDACS earthquake, flood, cyclone, volcano and drought alerts, shown on the map and as route-card warnings.
+- **Works Offline**: An installable web app. Save an area and its routes, shelters, damage and hazards open with no internet for 7 days.
 - **Privacy-by-Design**: Searched addresses and GPS locations are never stored in the database, never put in URLs, and never written to logs; area caches can be kept in memory only.
 
 ---
@@ -283,6 +287,38 @@ Suggested sites are **planning aids, never routing destinations**: they are labe
 
 ---
 
+## 🔥 Live Hazards
+
+Damage assessments describe the past. [`live_hazards.py`](live_hazards.py) adds two free, near-real-time feeds that need no account:
+
+| Feed | What it shows | Delay |
+|---|---|---|
+| **NASA FIRMS** (VIIRS on NOAA-20 and NOAA-21) | Fire and heat hot spots seen from orbit (375 m pixels) | about 3 h to 2 days |
+| **GDACS** | Earthquake, flood, tropical cyclone, volcano and drought alerts (Green, Orange, Red) | minutes to hours |
+
+- **Privacy:** both feeds are downloaded as **global files**, so no user's zone or location is ever sent to NASA or GDACS. The server filters them locally for each zone.
+- **Freshness:** the downloads refresh in the background every 30 minutes (`LIVE_HAZARD_REFRESH_SEC`), and the map polls `/api/hazards` every 5 minutes. Run `python manage.py refresh_hazards` before a demo, or from cron or Task Scheduler, to warm them. The last download is kept in `data/hazards/` (it holds no user data), so a restarted server still has it.
+- **On the map:** 🔥 markers for detections in or within 1 km of the zone over the last 48 hours, with near-duplicate satellite passes merged. A **Live hazards** panel lists GDACS alerts whose reach covers the zone (for example 100 km for a Green earthquake, 300 km for an Orange one) and says plainly when there is nothing.
+- **On routes:** *"Fire or heat detected 110 m from this route, 6 h ago (NASA FIRMS satellite, unverified)"* for any non-low-confidence detection within 500 m.
+- **Warnings only.** Live hazards **never change routes**. A FIRMS hot spot can be a strike or building fire, but also field burning, a wildfire or an industrial gas flare, so the app says "fire or heat detected", never "attack".
+- **Limits:** there is no public street-level, real-time danger feed. Air-raid alerts (for example Ukraine's) need an API token and are not included.
+
+---
+
+## 📴 Offline Use
+
+Connections drop in emergencies. The dashboard is a **progressive web app** ([`sw.js`](finder/static/finder/sw.js), [`pwa.js`](finder/static/finder/pwa.js)) that opens with no internet once it has been visited online:
+
+1. Find an area while online, then press **💾 Save this area for offline**. The routes, shelters, damage, dead ends, live hazards and (if shown) suggested shelter sites are stored in the browser's IndexedDB.
+2. Offline, open the dashboard: a banner says you're offline, and **Saved for offline** at the top lists saved areas. **Open** shows the saved copy, labelled with when it was saved.
+3. Routes can't be recalculated offline. Moving the pin or changing the travel mode puts the saved routes back and says why.
+
+- **What's cached:** the dashboard page, its scripts and styles, Leaflet from the CDN, and **map tiles you have already viewed** (up to 1,500). Tiles are never bulk-downloaded, in line with the [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/), so zoom around an area before saving it to keep more detail.
+- **Privacy:** saved areas never leave the device and are **deleted after 7 days**. **Delete all offline data** removes them, along with the cached page and tiles, and logging out does the same.
+- **Requirements:** service workers only run on HTTPS or `localhost`. API requests are never cached by the service worker, only the areas you choose to save.
+
+---
+
 ## 🛰️ Satellite Imagery & Damage Detection (legacy, off by default)
 
 > These Sentinel-2 estimates are **not used for the map or routing** unless `SATELLITE_DAMAGE_IN_ROUTING = True`. At 10 m per pixel, true-colour change detection cannot tell damage from clouds, haze or lighting. They remain available through `/api/damage` and `/api/annotate`.
@@ -417,7 +453,16 @@ Content-Type: application/json
 ```
 Returns up to `count` (1–8) suggested sites, each with `lat`, `lon`, `street`, `adds_coverage_pct`, `damaged_area_share_pct`, `nearest_damage_m` and a `catchment` polygon, plus `coverage.existing_shelters_pct`, `coverage.with_suggestions_pct`, `notes` and the method `basis`.
 
-### 5. Street-Level Imagery API
+### 5. Live Hazards API
+```http
+POST /api/hazards
+Content-Type: application/json
+
+{ "bbox": [west, south, east, north] }
+```
+Returns `fires` (GeoJSON points with `detected_at`, `hours_ago`, `age_text`, `confidence`, `frp_mw`, `satellite`, `detections`), `alerts` (GDACS `type_label`, `level`, `name`, `distance_km`, `severity`, `url`), `sources`, `updated`, `pending` (true while the first download runs) and `notes`. `/api/context` includes the same object as `hazards`, and each route from `/api/routes` gets `hazard_warnings`.
+
+### 6. Street-Level Imagery API
 ```http
 POST /api/streetview
 Content-Type: application/json
@@ -488,7 +533,7 @@ The container applies database migrations on start. Open [http://localhost:8000/
 The codebase includes exhaustive test suites covering graph routing, reachability algorithms, ML classifiers, and API endpoints:
 
 ```bash
-# Run Django integration, engine, official-damage, radar, shelter-suggestion & privacy tests (98 tests)
+# Run Django integration, engine, official-damage, radar, shelter-suggestion, live-hazard, offline & privacy tests (116 tests)
 python manage.py test
 
 # Run Evacuation Engine synthetic graph unit tests (25 tests)
@@ -506,6 +551,7 @@ python test_damage.py
 - **Privacy**: locations accepted in POST bodies, query strings redacted from request logs, no coordinates in routing logs, and nothing written to disk when `CACHE_AREAS_ON_DISK = False`.
 - **Suggested Shelters**: built-up demand cells, greedy maximum coverage, existing shelters filling their area first, keeping 150 m from damage, blocked roads, and that suggestions are never returned as routes.
 - **Radar Estimates**: the shipped model loads and matches the app's features, fallbacks (tuned statistic, then t-test), change detection, zone-wide shift removal, built-up masking, the systematic-noise cutoff, both layers' date windows, region matching, caching, background computation, and a guarantee that estimates never affect routing.
+- **Live Hazards & Offline**: FIRMS CSV parsing (including malformed rows), the 48-hour window, merging repeat satellite passes, GDACS reach by type and level, route warnings that never alter routes, background download and outage handling, the feeds being global downloads, and the service worker, manifest and offline controls being served.
 - **Route Diversity**: Enforces mathematical Jaccard edge-overlap bounds.
 - **OSM Fallbacks**: Validates recursive 2×2 chunking when Overpass mirrors fail or rate limit.
 
@@ -520,6 +566,8 @@ This platform was built adhering to strict ethical guidelines:
    - The map sends addresses, start points and zones in **POST bodies**, so they never appear in URLs, browser history or server access logs. (Endpoints still accept GET for older clients, and a logging filter redacts query strings from Django's request log either way.)
    - Routing logs record HTTP status and timing only, never coordinates, request URLs or response bodies.
    - For speed, road networks, shelter lists and radar estimates are cached per area on a ~1 km grid, with no user identity attached. Set `CACHE_AREAS_ON_DISK = False` to keep these caches in memory only, so no record of looked-up areas is written to disk.
+   - **Live hazard feeds** are downloaded as global files, so no zone or location is sent to NASA FIRMS or GDACS.
+   - **Offline saved areas** stay on the device (IndexedDB), are deleted after 7 days, and are wiped, along with cached pages and map tiles, by *Delete all offline data* or by logging out.
    - Limits: Street View requests go to Google with the shelter's coordinates, and the legacy satellite-scene tools (`/api/scene`, `/api/clips`, `/api/annotate`) save image clips in folders named by location under `data/squares/`.
    - **Use my location** runs entirely in the browser, only on secure (HTTPS or localhost) pages, and shows an accuracy circle; if the fix is worse than 100 m, it asks the user to drag the pin to where they really are.
 3. **No Commercial Imagery Tasking**: Relies entirely on free, public data: Copernicus EMS and UNOSAT damage assessments, and ESA Copernicus Sentinel-2 imagery published via STAC.

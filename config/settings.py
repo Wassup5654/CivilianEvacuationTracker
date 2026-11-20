@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -194,6 +195,13 @@ LOGGING = {
 # to keep these caches in memory only, so no record of looked-up areas is written
 # to disk.
 CACHE_AREAS_ON_DISK = True
+
+# Live hazards: NASA FIRMS fire/heat detections and GDACS disaster alerts.
+# Both are downloaded as global files (no user location is ever sent to them),
+# refreshed in the background, and shown as warnings only (never rerouting).
+# Off while running the test suite so tests never hit the network.
+LIVE_HAZARDS = os.environ.get("LIVE_HAZARDS", "1") != "0" and sys.argv[1:2] != ["test"]
+LIVE_HAZARD_REFRESH_SEC = 1800      # re-download the global feeds every 30 min
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 
 # Google Maps Street View Configuration (Optional API Key for official Embed API)

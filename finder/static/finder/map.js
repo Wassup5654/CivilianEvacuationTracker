@@ -31,8 +31,14 @@
   // Layer groups
   // deadEndLayer holds two sub-groups so the parallel context/routes fetches
   // never clear each other's features.
-  let damageLayer, deadEndLayer, strandedLayer, routeDeadEndLayer, shelterLayer, routeLayers, suggestLayer;
+  let damageLayer, deadEndLayer, strandedLayer, routeDeadEndLayer, shelterLayer, routeLayers, suggestLayer, hazardLayer;
   let suggestToken = 0;
+
+  // Latest results for the current zone, kept so the area can be saved for offline use
+  let lastCtx = null, lastRoutes = null, lastSuggest = null, lastHazards = null;
+  let lastQuery = null;            // {bbox, start, mode} the results above belong to
+  let currentPlaceLabel = "";
+  let viewingSaved = null;         // the saved area on screen while offline, if any
 
   // ── DOM refs ──
   const form        = document.getElementById("lookup");
@@ -94,14 +100,17 @@
     map = L.map("map", { zoomControl: true }).setView([lat, lon], DEFAULT_ZOOM);
 
     // Tile layers
+    // crossOrigin lets the service worker keep viewed tiles for offline use
     tileOSM = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
+      crossOrigin: true,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     });
 
     tileSat = L.tileLayer(
       "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
       maxZoom: 19,
+      crossOrigin: true,
       attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics'
     });
 
@@ -116,8 +125,10 @@
     shelterLayer = L.layerGroup().addTo(map);
     routeLayers  = L.layerGroup().addTo(map);
     suggestLayer = L.layerGroup().addTo(map);
+    hazardLayer  = L.layerGroup().addTo(map);
 
     // Wire up layer toggles
+    wireToggle("toggle-hazards", hazardLayer);
     wireToggle("toggle-damage", damageLayer);
     wireToggle("toggle-deadends", deadEndLayer);
     wireToggle("toggle-shelters", shelterLayer);
@@ -254,6 +265,12 @@
     return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
   }
 
+  function setZoneBbox(bbox) {
+    var bounds = L.latLngBounds([bbox[1], bbox[0]], [bbox[3], bbox[2]]);
+    if (!zoneRect) placeZone((bbox[1] + bbox[3]) / 2, (bbox[0] + bbox[2]) / 2);
+    zoneRect.setBounds(bounds);
+  }
+
   // ── Debounced API fetch ──
   function debouncedFetch() {
     clearTimeout(debounceTimer);
@@ -265,10 +282,17 @@
     var bbox = getZoneBbox();
     if (!bbox || !startMarker) return;
 
+    if (!navigator.onLine) { handleOffline(); return; }
+
     var token = ++fetchToken;
     routeCards.innerHTML = '<div class="panel-loading"><span class="spinner"></span> Computing best evacuation routes…</div>';
 
     var startPos = startMarker.getLatLng();
+    var query = { bbox: bbox, start: { lat: startPos.lat, lon: startPos.lng }, mode: currentMode };
+    if (!sameQuery(lastQuery, query)) {
+      lastCtx = lastRoutes = lastSuggest = null;
+    }
+    lastQuery = query;
 
     // 1. Fetch routes (primary result)
     fetch("/api/routes", {
@@ -293,11 +317,14 @@
       })
       .then(function (routeData) {
         if (token !== fetchToken || !routeData) return;
+        viewingSaved = null;
+        lastRoutes = routeData;
         renderRoutes(routeData);
         scheduleRadarRefresh(routeData.radar_pending, token);
       })
       .catch(function (err) {
         if (token !== fetchToken) return;
+        if (err instanceof TypeError && !navigator.onLine) { handleOffline(); return; }
         console.error("Route fetch error:", err);
         routeLayers.clearLayers();
         routeDeadEndLayer.clearLayers();
@@ -331,6 +358,7 @@
       })
       .then(function (ctx) {
         if (token !== fetchToken || !ctx) return;
+        lastCtx = ctx;
         renderContextLayers(ctx);
         scheduleRadarRefresh(ctx.radar_pending, token);
       })
@@ -387,6 +415,7 @@
       }).addTo(damageLayer);
     }
     renderDamageSources(ctx.damage_sources, ctx.damage_assessed);
+    if (ctx.hazards) renderHazards(ctx.hazards);
 
     // Stranded edges (roads cut off from every shelter by damage).
     // Dead ends come from /api/routes instead — see renderRouteDeadEnds().
@@ -472,10 +501,14 @@
           suggestResults.textContent = res.data.error || "Could not compute suggestions.";
           return;
         }
+        lastSuggest = res.data;
         renderSuggestions(res.data);
       })
       .catch(function () {
-        if (token === suggestToken) suggestResults.textContent = "Could not reach the suggestion service.";
+        if (token !== suggestToken) return;
+        suggestResults.textContent = navigator.onLine
+          ? "Could not reach the suggestion service."
+          : "You're offline. Suggested sites can only be shown for areas saved while they were on screen.";
       });
   }
 
@@ -609,10 +642,14 @@
     routeLayers.clearLayers();
     routeCards.innerHTML = "";
     renderRouteDeadEnds(data.dead_ends);
+    if (viewingSaved) {
+      routeCards.innerHTML = '<div class="saved-copy-note">📴 Saved copy from ' + escapeHtml(formatSavedAt(viewingSaved.savedAt)) +
+        ". These routes won't update until you're back online.</div>";
+    }
 
     var routes = data.routes || [];
     if (routes.length === 0) {
-      routeCards.innerHTML = '<p class="panel-placeholder">' +
+      routeCards.innerHTML += '<p class="panel-placeholder">' +
         escapeHtml(data.warnings && data.warnings.length ? data.warnings[0] : "No valid routes found.") +
         '</p><p class="panel-placeholder">Relief worker? Tick <strong>Show suggested shelters</strong> under ' +
         'Relief planning to see where new shelters would reach the most people.</p>';
@@ -666,6 +703,9 @@
             : '')) +
         (route.damage_warnings || []).map(function (w) {
           return '<div class="route-card-damage">⚠ ' + escapeHtml(w) + '</div>';
+        }).join("") +
+        (route.hazard_warnings || []).map(function (w) {
+          return '<div class="route-card-damage route-card-hazard">🔥 ' + escapeHtml(w) + '</div>';
         }).join("") +
         '<div class="route-card-reason">' + escapeHtml(route.rank_reason || "") + '</div>' +
         (route.shelter && route.shelter.lat
@@ -751,6 +791,11 @@
       })
       .catch(function () {
         if (token !== searchToken) return;
+        if (!navigator.onLine) {
+          setStatus("You're offline, so addresses can't be looked up. Open an area you saved for offline below.", true);
+          refreshSavedList(true);
+          return;
+        }
         setStatus("Could not reach the address lookup.", true);
       });
   });
@@ -761,6 +806,8 @@
     var lon = parseFloat(match.longitude);
     matchesList.innerHTML = "";
     setStatus("📍 " + match.display_name, false);
+    currentPlaceLabel = match.display_name;
+    viewingSaved = null;
     evacBody.hidden = false;
     clearAccuracyCircle();
 
@@ -885,6 +932,292 @@
       debouncedFetch();
     });
   });
+
+  // ── Live hazards: NASA FIRMS fire/heat detections + GDACS disaster alerts ──
+  // Warnings only; they never change routes. Refreshed every few minutes while online.
+  var hazardsPanel = document.getElementById("live-hazards");
+  var HAZARD_POLL_MS = 5 * 60 * 1000;
+  var hazardRetryTimer = null, hazardRetries = 0;
+
+  function renderHazards(h) {
+    if (!h || h.enabled === false || !hazardLayer) {
+      if (hazardsPanel) hazardsPanel.hidden = true;
+      return;
+    }
+    lastHazards = h;
+    hazardLayer.clearLayers();
+    var fires = (h.fires && h.fires.features) || [];
+    fires.forEach(function (f) {
+      var p = f.properties || {};
+      var c = f.geometry.coordinates;
+      L.marker([c[1], c[0]], {
+        icon: L.divIcon({ className: "fire-marker" + (p.hours_ago <= 12 ? " fresh" : ""), html: "🔥",
+                          iconSize: [22, 22], iconAnchor: [11, 11] }),
+        title: "Fire or heat detected " + (p.age_text || "")
+      }).bindPopup(
+        "<strong>Fire or heat detected</strong><br>" + escapeHtml(p.age_text || "") +
+        " · " + escapeHtml(p.satellite || "") + (p.detections > 1 ? " · seen " + p.detections + " times" : "") +
+        "<br>Confidence: " + escapeHtml(p.confidence || "") +
+        "<br><small>NASA FIRMS satellite hot spot (375 m pixel), unverified. It can be a strike or building fire, " +
+        "but also field burning, a wildfire or an industrial flare.</small>"
+      ).addTo(hazardLayer);
+    });
+
+    if (!hazardsPanel) return;
+    var alerts = h.alerts || [];
+    var html = '<h3>Live hazards <span class="live-dot" aria-hidden="true"></span></h3>';
+    if (h.pending) {
+      html += '<p class="live-line"><span class="spinner"></span> Downloading live satellite fire data…</p>';
+    } else {
+      alerts.forEach(function (a) {
+        html += '<div class="live-alert level-' + escapeHtml((a.level || "green").toLowerCase()) + '">' +
+          '<strong>' + escapeHtml(a.level) + " " + escapeHtml(a.type_label).toLowerCase() + " alert</strong>: " +
+          escapeHtml(a.name) + (a.distance_km ? " (" + a.distance_km + " km away)" : " (this area)") +
+          (a.severity ? "<br><small>" + escapeHtml(a.severity) + "</small>" : "") +
+          (a.url ? ' <a href="' + escapeHtml(a.url) + '" target="_blank" rel="noopener noreferrer">GDACS report</a>' : "") +
+          "</div>";
+      });
+      html += '<p class="live-line">' + (fires.length
+        ? "🔥 <strong>" + fires.length + "</strong> fire or heat detection" + (fires.length > 1 ? "s" : "") +
+          " in or near this zone in the last 48 h, newest " + escapeHtml(fires[0].properties.age_text) + "."
+        : "No fire or heat detected by satellite in this zone in the last 48 h.") + "</p>";
+      if (!alerts.length) html += '<p class="live-line">No GDACS disaster alerts (earthquake, flood, cyclone, volcano, drought) near this area.</p>';
+    }
+    (h.notes || []).forEach(function (n) { html += '<p class="live-line muted">' + escapeHtml(n) + "</p>"; });
+    html += '<p class="live-line muted">' + (viewingSaved ? "Saved " + escapeHtml(formatSavedAt(viewingSaved.savedAt)) + ". "
+      : (h.updated ? "Feeds downloaded " + escapeHtml(timeAgo(h.updated)) + ". " : "")) +
+      'Sources: <a href="https://firms.modaps.eosdis.nasa.gov/map/" target="_blank" rel="noopener noreferrer">NASA FIRMS</a>, ' +
+      '<a href="https://www.gdacs.org/" target="_blank" rel="noopener noreferrer">GDACS</a>.</p>';
+    hazardsPanel.innerHTML = html;
+    hazardsPanel.hidden = false;
+
+    clearTimeout(hazardRetryTimer);
+    if (h.pending && hazardRetries < 8) {
+      hazardRetries += 1;
+      hazardRetryTimer = setTimeout(refreshHazards, 15000);
+    } else if (!h.pending) {
+      hazardRetries = 0;
+    }
+  }
+
+  function refreshHazards() {
+    var bbox = getZoneBbox();
+    if (!bbox || viewingSaved || !navigator.onLine || document.hidden) return;
+    postJSON("/api/hazards", { bbox: bbox })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (h) {
+        var now = getZoneBbox();
+        if (h && now && now.join() === bbox.join() && !viewingSaved) renderHazards(h);
+      })
+      .catch(function () {});
+  }
+  setInterval(refreshHazards, HAZARD_POLL_MS);
+
+  function timeAgo(iso) {
+    var mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+    if (mins < 2) return "just now";
+    if (mins < 60) return mins + " min ago";
+    return Math.round(mins / 60) + " h ago";
+  }
+
+  // ── Offline: save areas on this device (IndexedDB), open them with no internet ──
+  var OFFLINE_DB = "evac-offline", OFFLINE_STORE = "areas";
+  var SAVE_DAYS = 7;
+  var saveBtn = document.getElementById("save-offline");
+  var savedBox = document.getElementById("saved-areas-box");
+  var savedList = document.getElementById("saved-areas");
+  var savedCount = document.getElementById("saved-count");
+  var clearBtn = document.getElementById("clear-offline");
+  var offlineBanner = document.getElementById("offline-banner");
+
+  function openDb() {
+    return new Promise(function (resolve, reject) {
+      if (!window.indexedDB) { reject(new Error("IndexedDB unavailable")); return; }
+      var req = indexedDB.open(OFFLINE_DB, 1);
+      req.onupgradeneeded = function () { req.result.createObjectStore(OFFLINE_STORE, { keyPath: "id" }); };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    });
+  }
+
+  function dbOp(mode, fn) {
+    return openDb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(OFFLINE_STORE, mode);
+        var result = fn(tx.objectStore(OFFLINE_STORE));
+        tx.oncomplete = function () { db.close(); resolve(result && result.result !== undefined ? result.result : result); };
+        tx.onerror = function () { db.close(); reject(tx.error); };
+      });
+    });
+  }
+
+  function listSaved() {
+    return dbOp("readonly", function (s) { return s.getAll(); }).then(function (all) {
+      var now = Date.now();
+      var expired = (all || []).filter(function (a) { return a.expiresAt <= now; });
+      if (expired.length) {
+        dbOp("readwrite", function (s) { expired.forEach(function (a) { s.delete(a.id); }); }).catch(function () {});
+      }
+      return (all || []).filter(function (a) { return a.expiresAt > now; })
+        .sort(function (a, b) { return b.savedAt - a.savedAt; });
+    });
+  }
+
+  function formatSavedAt(ms) {
+    return new Date(ms).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  }
+
+  function sameQuery(a, b) {
+    return !!a && !!b && a.mode === b.mode && a.bbox.join() === b.bbox.join() &&
+      Math.abs(a.start.lat - b.start.lat) < 1e-7 && Math.abs(a.start.lon - b.start.lon) < 1e-7;
+  }
+
+  function refreshSavedList(open) {
+    if (!savedBox) return Promise.resolve([]);
+    return listSaved().then(function (areas) {
+      savedList.innerHTML = "";
+      savedCount.textContent = String(areas.length);
+      savedBox.hidden = areas.length === 0;
+      if (open && areas.length) savedBox.open = true;
+      areas.forEach(function (a) {
+        var li = document.createElement("li");
+        var name = document.createElement("strong");
+        name.textContent = a.label || "Saved area";
+        var meta = document.createElement("span");
+        meta.className = "saved-meta";
+        var nRoutes = (a.routes && a.routes.routes || []).length;
+        meta.textContent = (a.mode === "drive" ? "🚗" : "🚶") + " " + nRoutes + " route" + (nRoutes === 1 ? "" : "s") +
+          " · saved " + formatSavedAt(a.savedAt) +
+          " · deleted after " + new Date(a.expiresAt).toLocaleDateString([], { dateStyle: "medium" });
+        var openBtn = document.createElement("button");
+        openBtn.type = "button";
+        openBtn.textContent = "Open";
+        openBtn.addEventListener("click", function () { openSaved(a); });
+        var delBtn = document.createElement("button");
+        delBtn.type = "button";
+        delBtn.className = "secondary";
+        delBtn.textContent = "Delete";
+        delBtn.addEventListener("click", function () {
+          dbOp("readwrite", function (s) { s.delete(a.id); }).then(function () { refreshSavedList(); });
+        });
+        li.append(name, meta, openBtn, delBtn);
+        savedList.appendChild(li);
+      });
+      return areas;
+    }).catch(function () { if (savedBox) savedBox.hidden = true; return []; });
+  }
+
+  function saveForOffline() {
+    var bbox = getZoneBbox();
+    var start = startMarker && startMarker.getLatLng();
+    var query = bbox && start ? { bbox: bbox, start: { lat: start.lat, lon: start.lng }, mode: currentMode } : null;
+    if (!query || !sameQuery(lastQuery, query) || !lastRoutes || !lastCtx) {
+      showToast("Wait for the routes and map layers to finish loading, then save.", 4000);
+      return;
+    }
+    var now = Date.now();
+    var record = {
+      id: "area-" + now,
+      label: currentPlaceLabel || "Saved area",
+      savedAt: now,
+      expiresAt: now + SAVE_DAYS * 24 * 3600 * 1000,
+      bbox: bbox, start: query.start, mode: currentMode,
+      ctx: lastCtx, routes: lastRoutes,
+      suggest: suggestBox && suggestBox.checked ? lastSuggest : null,
+      hazards: lastHazards
+    };
+    // Show the whole zone so its map tiles are fetched (and kept by the service worker).
+    map.fitBounds(zoneRect.getBounds(), { padding: [20, 20] });
+    dbOp("readwrite", function (s) { s.put(record); })
+      .then(function () {
+        showToast("Saved for offline use until " + new Date(record.expiresAt).toLocaleDateString([], { dateStyle: "medium" }) +
+                  ". It opens with no internet from 'Saved for offline' at the top.", 6000);
+        refreshSavedList();
+      })
+      .catch(function () { showToast("This browser can't store offline data (private window?).", 5000); });
+  }
+
+  function openSaved(a) {
+    viewingSaved = a;
+    ++fetchToken;                    // ignore any request still in flight
+    evacBody.hidden = false;
+    currentPlaceLabel = a.label;
+    setStatus("📴 " + a.label + " (saved " + formatSavedAt(a.savedAt) + ")", false);
+    currentMode = a.mode || "walk";
+    document.querySelectorAll(".mode-btn").forEach(function (b) {
+      var on = b.getAttribute("data-mode") === currentMode;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    initMap(a.start.lat, a.start.lon);
+    placeStartMarker(a.start.lat, a.start.lon);
+    setZoneBbox(a.bbox);
+    lastQuery = { bbox: a.bbox, start: a.start, mode: currentMode };
+    lastCtx = a.ctx; lastRoutes = a.routes; lastSuggest = a.suggest;
+    renderContextLayers(a.ctx);
+    if (a.hazards) renderHazards(a.hazards);
+    renderRoutes(a.routes);
+    if (a.suggest) { if (suggestBox) suggestBox.checked = true; renderSuggestions(a.suggest); }
+    else { if (suggestBox) suggestBox.checked = false; clearSuggestions(); }
+    setTimeout(function () {
+      map.invalidateSize(true);
+      map.fitBounds(zoneRect.getBounds(), { padding: [40, 40], maxZoom: 16 });
+    }, 100);
+    if (savedBox) savedBox.open = false;
+  }
+
+  function handleOffline() {
+    updateOnlineBanner();
+    if (viewingSaved) {
+      // Routes can't be recalculated offline: put the pin, zone and mode back as they were saved.
+      openSaved(viewingSaved);
+      showToast("You're offline. Routes can't be recalculated, so the saved routes are shown.", 5000);
+      return;
+    }
+    routeLayers && routeLayers.clearLayers();
+    routeCards.innerHTML = '<div class="panel-placeholder error-card"><p><strong>You\'re offline.</strong> ' +
+      "Routes need an internet connection to calculate. Open an area you saved for offline from " +
+      "<strong>Saved for offline</strong> at the top of the page.</p></div>";
+    refreshSavedList(true);
+  }
+
+  function updateOnlineBanner() {
+    if (!offlineBanner) return;
+    if (navigator.onLine) {
+      offlineBanner.hidden = true;
+    } else {
+      offlineBanner.hidden = false;
+      offlineBanner.textContent = "📴 You're offline. Saved areas still work; new searches and routes need a connection.";
+    }
+  }
+
+  window.addEventListener("offline", function () { updateOnlineBanner(); refreshSavedList(true); });
+  window.addEventListener("online", function () {
+    updateOnlineBanner();
+    showToast("Back online.", 3000);
+    if (viewingSaved) {
+      setStatus("📍 " + viewingSaved.label + " (showing saved copy; move the pin or zone to refresh)", false);
+      viewingSaved = null;
+    }
+    refreshHazards();
+  });
+
+  if (saveBtn) saveBtn.addEventListener("click", saveForOffline);
+  if (clearBtn) {
+    clearBtn.addEventListener("click", function () {
+      dbOp("readwrite", function (s) { s.clear(); })
+        .then(function () {
+          if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({ type: "clear" });
+          }
+          refreshSavedList();
+          showToast("All offline data was deleted from this device.", 4000);
+        })
+        .catch(function () {});
+    });
+  }
+  updateOnlineBanner();
+  refreshSavedList(!navigator.onLine);
 
   // ── POST helper: locations, zones and searched addresses travel in the request
   //    body, never in URLs (which end up in browser history and server logs). ──

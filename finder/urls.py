@@ -20,4 +20,8 @@ urlpatterns = [
     path("api/routes", views.routes_view, name="routes"),
     path("api/streetview", views.streetview_view, name="streetview"),
     path("api/suggest-shelters", views.suggest_shelters_view, name="suggest_shelters"),
+    path("api/hazards", views.hazards_view, name="hazards"),
+    # Offline support (progressive web app)
+    path("sw.js", views.service_worker, name="service_worker"),
+    path("manifest.webmanifest", views.web_manifest, name="web_manifest"),
 ]

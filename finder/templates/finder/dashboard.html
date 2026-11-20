@@ -4,7 +4,7 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{% static 'finder/map.css' %}?v=2.5">
+<link rel="stylesheet" href="{% static 'finder/map.css' %}?v=2.6">
 {% endblock %}
 
 {% block content %}
@@ -29,6 +29,13 @@
         </div>
       </form>
       <p id="status" class="status" role="status"></p>
+      <div id="offline-banner" class="offline-banner" role="status" hidden></div>
+      <details id="saved-areas-box" class="saved-areas" hidden>
+        <summary>Saved for offline (<span id="saved-count">0</span>)</summary>
+        <ul id="saved-areas" class="saved-list"></ul>
+        <p class="saved-note">Stored on this device only. Each saved area is deleted after 7 days, and all offline data is deleted when you log out.</p>
+        <button type="button" id="clear-offline" class="secondary">Delete all offline data</button>
+      </details>
       <ul id="matches" class="matches"></ul>
     </div>
 
@@ -61,11 +68,12 @@
 
           <!-- Disaster Warning Footer -->
           <div class="streetview-footer">
-            <span>⚠ Street view imagery may predate recent disaster events. Cross-reference with Sentinel-2 damage overlays.</span>
+            <span>⚠ Street View imagery may predate recent disaster events. Compare it with the damage areas on the map.</span>
           </div>
         </div>
       </div>
       <aside class="evac-panel" id="evac-panel" aria-label="Route information">
+        <section id="live-hazards" class="live-hazards" aria-live="polite" hidden></section>
         <h2>Routes</h2>
         <div id="route-cards" class="route-cards">
           <p class="panel-placeholder">Search an address and draw an evacuation zone to see routes.</p>
@@ -78,6 +86,14 @@
           <label><input type="checkbox" id="toggle-deadends" checked> Dead ends</label>
           <label><input type="checkbox" id="toggle-shelters" checked> Shelters</label>
           <label><input type="checkbox" id="toggle-routes" checked> Routes</label>
+          <label><input type="checkbox" id="toggle-hazards" checked> Live fire/heat detections</label>
+        </fieldset>
+
+        <!-- Offline: keep this area's routes, shelters and damage on the device -->
+        <fieldset class="layer-toggles offline-tools">
+          <legend>Offline</legend>
+          <button type="button" id="save-offline" class="secondary">💾 Save this area for offline</button>
+          <p class="suggest-basis">Keeps these routes, shelters, damage and live hazards on this device for 7 days, so they open with no internet. Map tiles you have already viewed are kept too.</p>
         </fieldset>
 
         <!-- Relief planning: suggested new shelter sites -->
@@ -107,6 +123,7 @@
           <div class="legend-row"><span class="swatch route-swatch" style="background:#EA580C"></span> Route 3</div>
           <div class="legend-row"><span class="swatch" style="background:#22C55E"></span> Shelter</div>
           <div class="legend-row"><span class="swatch" style="background:#0D9488;opacity:0.6;border-style:dashed"></span> Suggested shelter site (planning)</div>
+          <div class="legend-row"><span class="swatch fire-swatch"></span> Fire or heat detected by satellite (live, last 48 h)</div>
           <div class="legend-row"><span class="swatch" style="background:#6B7280;border-style:dashed"></span> Dead end / stranded</div>
           <div class="legend-row"><span class="swatch" style="background:#2563EB;opacity:0.3"></span> Evacuation zone</div>
         </div>
@@ -114,7 +131,7 @@
         <!-- Footer info -->
         <div class="evac-footer" id="evac-footer">
           <p id="imagery-date" class="footer-note"></p>
-          <p class="footer-disclaimer">⚠ Damage assessments come from satellite analysis by Copernicus EMS and UNOSAT, may be out of date or incomplete, and are not field-verified. Follow official guidance.</p>
+          <p class="footer-disclaimer">⚠ Damage assessments come from satellite analysis by Copernicus EMS and UNOSAT, may be out of date or incomplete, and are not field-verified. Live fire/heat detections (NASA FIRMS) are hours old and can be industrial flares or field burning. Follow official guidance.</p>
         </div>
       </aside>
     </div>
@@ -122,5 +139,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'finder/map.js' %}?v=3.0"></script>
+<script src="{% static 'finder/map.js' %}?v=3.1"></script>
 {% endblock %}
