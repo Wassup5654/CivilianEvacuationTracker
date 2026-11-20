@@ -4,7 +4,7 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block extra_head %}
-<link rel="stylesheet" href="{% static 'finder/map.css' %}?v=2.6">
+<link rel="stylesheet" href="{% static 'finder/map.css' %}?v=2.7">
 {% endblock %}
 
 {% block content %}
@@ -113,19 +113,19 @@
         <!-- Legend -->
         <div class="map-legend">
           <h3>Legend</h3>
-          <div class="legend-row"><span class="swatch" style="background:#7F1D1D"></span> Destroyed (official)</div>
-          <div class="legend-row"><span class="swatch" style="background:#DC2626"></span> Damaged (official)</div>
-          <div class="legend-row"><span class="swatch" style="background:#F59E0B"></span> Possibly damaged (official)</div>
-          <div class="legend-row"><span class="swatch" style="background:#7C3AED;opacity:0.5;border-style:dashed"></span> Estimated: war's first months (radar)</div>
-          <div class="legend-row"><span class="swatch" style="background:#DB2777;opacity:0.5;border-style:dashed"></span> Estimated: new in last 12 months (radar)</div>
-          <div class="legend-row"><span class="swatch route-swatch" style="background:#16A34A"></span> Route 1 (best)</div>
-          <div class="legend-row"><span class="swatch route-swatch" style="background:#7C3AED"></span> Route 2</div>
-          <div class="legend-row"><span class="swatch route-swatch" style="background:#EA580C"></span> Route 3</div>
-          <div class="legend-row"><span class="swatch" style="background:#22C55E"></span> Shelter</div>
-          <div class="legend-row"><span class="swatch" style="background:#0D9488;opacity:0.6;border-style:dashed"></span> Suggested shelter site (planning)</div>
+          <div class="legend-row"><span class="swatch" style="background:var(--sw-destroyed)"></span> Destroyed (official)</div>
+          <div class="legend-row"><span class="swatch" style="background:var(--sw-damaged)"></span> Damaged (official)</div>
+          <div class="legend-row"><span class="swatch" style="background:var(--sw-possibly)"></span> Possibly damaged (official)</div>
+          <div class="legend-row"><span class="swatch" style="background:var(--sw-est-war);opacity:0.5;border-style:dashed"></span> Estimated: war's first months (radar)</div>
+          <div class="legend-row"><span class="swatch" style="background:var(--sw-est-recent);opacity:0.5;border-style:dashed"></span> Estimated: new in last 12 months (radar)</div>
+          <div class="legend-row"><span class="swatch route-swatch" style="background:var(--route-1)"></span> Route 1 (best)</div>
+          <div class="legend-row"><span class="swatch route-swatch" style="background:var(--route-2)"></span> Route 2</div>
+          <div class="legend-row"><span class="swatch route-swatch" style="background:var(--route-3)"></span> Route 3</div>
+          <div class="legend-row"><span class="swatch" style="background:var(--sw-shelter);border-color:var(--sw-shelter-ring,#fff)"></span> Shelter</div>
+          <div class="legend-row"><span class="swatch" style="background:var(--sw-suggest);opacity:0.6;border-style:dashed"></span> Suggested shelter site (planning)</div>
           <div class="legend-row"><span class="swatch fire-swatch"></span> Fire or heat detected by satellite (live, last 48 h)</div>
-          <div class="legend-row"><span class="swatch" style="background:#6B7280;border-style:dashed"></span> Dead end / stranded</div>
-          <div class="legend-row"><span class="swatch" style="background:#2563EB;opacity:0.3"></span> Evacuation zone</div>
+          <div class="legend-row"><span class="swatch" style="background:var(--sw-deadend);border-style:dashed"></span> Dead end / stranded</div>
+          <div class="legend-row"><span class="swatch" style="background:var(--sw-zone);opacity:0.3"></span> Evacuation zone</div>
         </div>
 
         <!-- Footer info -->
@@ -139,5 +139,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{% static 'finder/map.js' %}?v=3.1"></script>
+<script src="{% static 'finder/map.js' %}?v=3.4"></script>
 {% endblock %}

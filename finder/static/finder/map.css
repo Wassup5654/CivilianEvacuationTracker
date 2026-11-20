@@ -126,16 +126,16 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.route-card[data-rank="1"] { border-left: 4px solid #16A34A; }
-.route-card[data-rank="2"] { border-left: 4px solid #7C3AED; }
-.route-card[data-rank="3"] { border-left: 4px solid #EA580C; }
+.route-card[data-rank="1"] { border-left: 4px solid var(--route-1); }
+.route-card[data-rank="2"] { border-left: 4px solid var(--route-2); }
+.route-card[data-rank="3"] { border-left: 4px solid var(--route-3); }
 
 .route-card:hover[data-rank="1"],
-.route-card.highlighted[data-rank="1"] { border-color: #16A34A; }
+.route-card.highlighted[data-rank="1"] { border-color: var(--route-1); color: inherit; }
 .route-card:hover[data-rank="2"],
-.route-card.highlighted[data-rank="2"] { border-color: #7C3AED; }
+.route-card.highlighted[data-rank="2"] { border-color: var(--route-2); color: inherit; }
 .route-card:hover[data-rank="3"],
-.route-card.highlighted[data-rank="3"] { border-color: #EA580C; }
+.route-card.highlighted[data-rank="3"] { border-color: var(--route-3); color: inherit; }
 
 .route-card-header {
   display: flex;
@@ -157,9 +157,9 @@
   color: #fff;
 }
 
-.route-card[data-rank="1"] .route-card-badge { background: #16A34A; }
-.route-card[data-rank="2"] .route-card-badge { background: #7C3AED; }
-.route-card[data-rank="3"] .route-card-badge { background: #EA580C; }
+.route-card[data-rank="1"] .route-card-badge { background: var(--route-1); }
+.route-card[data-rank="2"] .route-card-badge { background: var(--route-2); }
+.route-card[data-rank="3"] .route-card-badge { background: var(--route-3); }
 
 .route-card-stats {
   display: grid;
@@ -640,7 +640,7 @@
 .suggest-site strong { color: #0F766E; }
 .suggest-basis { color: #6B7280; font-size: 11.5px; margin-top: 6px; }
 .suggest-marker {
-  background: #0D9488; color: #fff; border: 2px dashed #fff; border-radius: 50%;
+  background: var(--suggest, #0D9488); color: #fff; border: 2px dashed #fff; border-radius: 50%;
   width: 26px !important; height: 26px !important; line-height: 22px; text-align: center;
   font-weight: 700; font-size: 13px; box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
 }

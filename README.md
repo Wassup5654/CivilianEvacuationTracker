@@ -61,6 +61,7 @@ The platform combines **official damage assessments from Copernicus EMS and UNOS
 - **Street-Level Imagery**: On-demand Google Street View for any shelter or route destination, embedded in a sliding drawer, with a one-click link to the fullscreen panorama in Google Maps. No client-side API token is required.
 - **Live Hazards**: Satellite fire and heat detections from NASA FIRMS (refreshed every 30 minutes) and GDACS earthquake, flood, cyclone, volcano and drought alerts, shown on the map and as route-card warnings.
 - **Works Offline**: An installable web app. Save an area and its routes, shelters, damage and hazards open with no internet for 7 days.
+- **Ops & Light Themes**: A dark black-and-green "ops" theme by default (darkened street map, cyan and white routes and shelters so danger colours stay distinct) and the original light theme, switchable from the header and remembered per browser.
 - **Privacy-by-Design**: Searched addresses and GPS locations are never stored in the database, never put in URLs, and never written to logs; area caches can be kept in memory only.
 
 ---
@@ -83,15 +84,17 @@ This platform was built for **AFS x VT**, a build challenge run by **Accenture F
 ```mermaid
 flowchart TD
     subgraph Client ["Client Browser (Leaflet.js + Vanilla ES6)"]
-        UI["Interactive Evacuation Map"]
+        UI["Interactive Evacuation Map (map.js, dashboard.html)"]
         GeocodeUI["Address Lookup & Disambiguation"]
-        Layers["Layer Toggles: Damage / Dead-Ends / Shelters / Routes"]
+        Layers["Layer Toggles: Damage / Dead Ends / Shelters / Routes / Live Hazards"]
+        Offline["Offline Mode & Saved Areas (sw.js, pwa.js)"]
     end
 
     subgraph Django ["Django 6.1 Application Layer"]
         Views["API Views (finder/views.py)"]
         Auth["User Authentication & Session Management"]
-        ShelterModel["Shelter & Damage Dataset Models"]
+        ShelterModel["Shelter, Damage Dataset & Conflict Region Models (finder/models.py)"]
+        Geocode["Address Search (geocode.py)"]
     end
 
     subgraph Engine ["Evacuation & Damage Processing Pipeline"]
@@ -99,36 +102,52 @@ flowchart TD
         ShelterFinder["OSM Overpass / Core Shelter Ingestion (shelters.py)"]
         GraphEngine["NetworkX Topology & Cost Modeler"]
         OfficialDamage["Official Damage: Copernicus EMS + UNOSAT (official_damage.py)"]
-        DamageCV["Legacy Sentinel-2 Differencing, off by default (damage.py)"]
-        DamageML["xBD Dual-Temporal Deep Learning (xbd_s12_damage.py)"]
+        Radar["Radar Damage Estimates (radar_damage.py + models/)"]
+        Suggest["Suggested Shelter Planner (shelter_suggest.py)"]
+        Hazards["Live Hazards: Fires + Disaster Alerts (live_hazards.py)"]
+        DamageCV["Legacy Sentinel-2 Differencing, off by default (damage.py, xbd_s12_damage.py)"]
     end
 
     subgraph External ["External Geospatial & Remote Sensing APIs"]
         CEMS["Copernicus EMS Rapid Mapping API"]
-        STAC["Microsoft Planetary Computer Sentinel-2 L2A"]
+        STAC["Microsoft Planetary Computer: Sentinel-1 Radar, ESA WorldCover, Sentinel-2"]
         Overpass["Overpass API Mirrors"]
         CoreOSM["OpenStreetMap Core API 0.6"]
         Nominatim["OSM Nominatim Geocoding"]
+        FIRMS["NASA FIRMS Fire Detections"]
+        GDACS["GDACS Disaster Alerts"]
     end
 
     UI <-->|"JSON / GeoJSON"| Views
-    GeocodeUI -->|"Search"| Nominatim
+    GeocodeUI -->|"POST /api/search"| Views
+    Offline -.->|"Cached page, tiles & saved areas"| UI
+    Views --> Geocode
+    Geocode <--> Nominatim
     Views --> ShelterFinder
     Views --> OfficialDamage
+    Views --> Radar
+    Views --> Suggest
+    Views --> Hazards
+    Views --> OSMHarvest
     OfficialDamage <-->|"Grading products"| CEMS
     OfficialDamage <-->|"Imported UNOSAT datasets"| ShelterModel
     OfficialDamage -->|"Graded roads"| GraphEngine
-    Views -.->|"if enabled"| DamageCV
-    Views --> OSMHarvest
-    DamageCV <-->|"STAC Queries"| STAC
-    DamageCV --> DamageML
+    Radar <-->|"Sentinel-1 radar + built-up mask"| STAC
+    Radar -.->|"Warnings only"| Views
+    Suggest <-->|"Built-up area"| STAC
+    Suggest --> GraphEngine
+    Hazards <-->|"Global downloads, no user location"| FIRMS
+    Hazards <--> GDACS
+    Hazards -.->|"Warnings only"| Views
     ShelterFinder <--> Overpass
     ShelterFinder <--> CoreOSM
     ShelterFinder <--> ShelterModel
     OSMHarvest <--> Overpass
     OSMHarvest <--> CoreOSM
     OSMHarvest --> GraphEngine
-    DamageML -->|"Damage Polygons"| GraphEngine
+    Views -.->|"if enabled"| DamageCV
+    DamageCV <-->|"STAC Queries"| STAC
+    DamageCV -.->|"Damage Polygons"| GraphEngine
     GraphEngine -->|"Cheapest Diverse Paths"| Views
 ```
 

@@ -4,16 +4,41 @@
 
 (function () {
   // ── Constants ──
-  const ROUTE_COLORS = ["#16A34A", "#7C3AED", "#EA580C"];
   const ROUTE_LABELS = ["Route 1 (best)", "Route 2", "Route 3"];
   const ROUTE_DASHES = ["", "16 8", "8 6 2 6"];
   const ROUTE_WEIGHTS = [6, 5, 5];
-  const DAMAGE_STROKE = "#DC2626";
-  const GRADE_COLORS = { destroyed: "#7F1D1D", damaged: "#DC2626", possibly_damaged: "#F59E0B" };
-  const ESTIMATE_COLORS = { war_start: "#7C3AED", recent: "#DB2777" };
-  const DEAD_END_COLOR = "#6B7280";
-  const SHELTER_COLOR = "#22C55E";
-  const ZONE_COLOR = "#2563EB";
+
+  // Map colours per theme. In the dark "ops" theme routes and shelters move to
+  // cyan/white so they don't blend into the green UI; danger colours stay red/amber/purple.
+  const PALETTES = {
+    light: {
+      route: ["#16A34A", "#7C3AED", "#EA580C"],
+      grade: { destroyed: "#7F1D1D", damaged: "#DC2626", possibly_damaged: "#F59E0B" },
+      estimate: { war_start: "#7C3AED", recent: "#DB2777" },
+      damage: "#DC2626", deadEnd: "#6B7280", shelter: "#22C55E", shelterRing: "#fff",
+      zone: "#2563EB", suggest: "#0D9488", zoneFill: 0.15, areaFill: 0.12, areaWeight: 1.5
+    },
+    ops: {
+      route: ["#22D3EE", "#C084FC", "#FB923C"],
+      grade: { destroyed: "#DC2626", damaged: "#F87171", possibly_damaged: "#FBBF24" },
+      estimate: { war_start: "#A78BFA", recent: "#F472B6" },
+      damage: "#F87171", deadEnd: "#9CA3AF", shelter: "#F8FAFC", shelterRing: "#22C55E",
+      zone: "#39FF88", suggest: "#14B8A6", zoneFill: 0.05, areaFill: 0.24, areaWeight: 2
+    }
+  };
+  let ROUTE_COLORS, GRADE_COLORS, ESTIMATE_COLORS, DAMAGE_STROKE, DEAD_END_COLOR,
+      SHELTER_COLOR, SHELTER_RING, ZONE_COLOR, SUGGEST_COLOR, ZONE_FILL, AREA_FILL, AREA_WEIGHT;
+  function themeName() {
+    return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "ops";
+  }
+  function applyPalette() {
+    var p = PALETTES[themeName()];
+    ROUTE_COLORS = p.route; GRADE_COLORS = p.grade; ESTIMATE_COLORS = p.estimate;
+    DAMAGE_STROKE = p.damage; DEAD_END_COLOR = p.deadEnd; SHELTER_COLOR = p.shelter;
+    SHELTER_RING = p.shelterRing; ZONE_COLOR = p.zone; SUGGEST_COLOR = p.suggest;
+    ZONE_FILL = p.zoneFill; AREA_FILL = p.areaFill; AREA_WEIGHT = p.areaWeight;
+  }
+  applyPalette();
   const DEFAULT_ZOOM = 16;
   const DEFAULT_RECT_M = 1500;   // 1.5 km default side
   const MAX_RECT_M = 5000;       // 5 km max side
@@ -104,6 +129,7 @@
     tileOSM = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       crossOrigin: true,
+      className: "osm-tiles",
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     });
 
@@ -114,8 +140,10 @@
       attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics'
     });
 
+    // The ops theme darkens these same tiles with a CSS filter (theme-ops.css),
+    // so no extra tile provider or key is needed and offline-cached tiles still work.
     tileOSM.addTo(map);
-    L.control.layers({ "OpenStreetMap": tileOSM, "Satellite": tileSat }).addTo(map);
+    L.control.layers({ "Map": tileOSM, "Satellite": tileSat }).addTo(map);
 
     // Layer groups
     damageLayer  = L.layerGroup().addTo(map);
@@ -201,7 +229,7 @@
         color: ZONE_COLOR,
         weight: 3,
         fillColor: ZONE_COLOR,
-        fillOpacity: 0.15,
+        fillOpacity: ZONE_FILL,
         dashArray: "6 4",
         interactive: true
       }).addTo(map);
@@ -385,7 +413,7 @@
           }
           var color = GRADE_COLORS[p.grade] || DAMAGE_STROKE;
           if (p.kind === "road") return { color: color, weight: 6, opacity: 0.85 };
-          if (p.kind === "area") return { color: color, weight: 1.5, fillColor: color, fillOpacity: 0.12, dashArray: "4 3" };
+          if (p.kind === "area") return { color: color, weight: AREA_WEIGHT, fillColor: color, fillOpacity: AREA_FILL, dashArray: "4 3" };
           return { color: color, weight: 1, fillColor: color, fillOpacity: 0.6 };
         },
         pointToLayer: function (feature, latlng) {
@@ -439,7 +467,7 @@
           radius: 8,
           fillColor: SHELTER_COLOR,
           fillOpacity: 0.9,
-          color: "#fff",
+          color: SHELTER_RING,
           weight: 2
         });
 
@@ -531,7 +559,7 @@
     sites.forEach(function (s) {
       if (s.catchment) {
         L.geoJSON(s.catchment, {
-          style: { color: "#0D9488", weight: 1.5, dashArray: "4 4", fillColor: "#0D9488", fillOpacity: 0.07 },
+          style: { color: SUGGEST_COLOR, weight: 1.5, dashArray: "4 4", fillColor: SUGGEST_COLOR, fillOpacity: 0.07 },
           interactive: false
         }).addTo(suggestLayer);
       }
@@ -1218,6 +1246,17 @@
   }
   updateOnlineBanner();
   refreshSavedList(!navigator.onLine);
+
+  // ── Theme switch (see theme.js): redraw the map layers in the new colours ──
+  document.addEventListener("evac-themechange", function () {
+    applyPalette();
+    if (!map) return;
+    if (zoneRect) zoneRect.setStyle({ color: ZONE_COLOR, fillColor: ZONE_COLOR, fillOpacity: ZONE_FILL });
+    if (accuracyCircle) accuracyCircle.setStyle({ color: ZONE_COLOR, fillColor: ZONE_COLOR });
+    if (lastCtx) renderContextLayers(lastCtx);
+    if (lastRoutes) renderRoutes(lastRoutes);
+    if (lastSuggest && suggestBox && suggestBox.checked) renderSuggestions(lastSuggest);
+  });
 
   // ── POST helper: locations, zones and searched addresses travel in the request
   //    body, never in URLs (which end up in browser history and server logs). ──

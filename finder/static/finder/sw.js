@@ -9,7 +9,7 @@
  */
 "use strict";
 
-const VERSION = "v1";
+const VERSION = "v2";
 const SHELL_CACHE = "evac-shell-" + VERSION;
 const TILE_CACHE = "evac-tiles-" + VERSION;
 const MAX_TILES = 1500;

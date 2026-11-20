@@ -1,0 +1,275 @@
+/* ── "Ops" theme: black and phosphor green, mission-control style ──
+ * Applies only under html[data-theme="ops"]; the light "Field Brief" theme in
+ * site.css/map.css is untouched. Danger colours (red/amber/purple damage, fire)
+ * stay distinct from the green UI; routes and shelters use cyan and white.
+ * Body text is a soft mint on near-black for readability; monospace is used
+ * for labels, headings and numbers only.
+ */
+
+/* Route colours as variables, shared by both themes (cards, badges, legend) */
+:root {
+  --route-1: #16A34A; --route-2: #7C3AED; --route-3: #EA580C;
+  --sw-destroyed: #7F1D1D; --sw-damaged: #DC2626; --sw-possibly: #F59E0B;
+  --sw-est-war: #7C3AED; --sw-est-recent: #DB2777;
+  --sw-shelter: #22C55E; --sw-suggest: #0D9488; --sw-deadend: #6B7280; --sw-zone: #2563EB;
+  --suggest: #0D9488;
+}
+
+html[data-theme="ops"] {
+  color-scheme: dark;
+  --ink: #d7f5e3;
+  --muted: #86a896;
+  --line: #1d3a2c;
+  --paper: #050807;
+  --card: #0a100d;
+  --card-2: #0e1612;
+  --header: #000;
+  --header-text: #d7f5e3;
+  --brass: #39ff88;         /* primary accent (replaces brass) */
+  --brass-deep: #2bd673;
+  --sage: #0e1b14;
+  --sage-line: #1f5b3a;
+  --danger: #ff6b6b;
+  --glow: 0 0 0 1px rgba(57, 255, 136, 0.35), 0 0 14px rgba(57, 255, 136, 0.18);
+  --mono: "JetBrains Mono", "Cascadia Code", "Cascadia Mono", Consolas, "SFMono-Regular", Menlo, monospace;
+
+  --route-1: #22D3EE; --route-2: #C084FC; --route-3: #FB923C;
+  --sw-destroyed: #DC2626; --sw-damaged: #F87171; --sw-possibly: #FBBF24;
+  --sw-est-war: #A78BFA; --sw-est-recent: #F472B6;
+  --sw-shelter: #F8FAFC; --sw-suggest: #2DD4BF; --sw-deadend: #9CA3AF; --sw-zone: #39ff88;
+  --suggest: #14B8A6;
+}
+
+/* ── Page chrome ── */
+html[data-theme="ops"] { background: var(--paper); }
+html[data-theme="ops"] body {
+  min-height: 100vh;
+  color: var(--ink);
+  background:
+    linear-gradient(rgba(57, 255, 136, 0.025) 1px, transparent 1px) 0 0 / 100% 3px,
+    radial-gradient(ellipse 120% 40rem at top, #0b1a12 0, var(--paper) 100%) no-repeat;
+  background-color: var(--paper);
+}
+html[data-theme="ops"] header {
+  background: #000;
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 0 rgba(57, 255, 136, 0.25), 0 6px 24px rgba(57, 255, 136, 0.06);
+}
+html[data-theme="ops"] header a.brand {
+  font-family: var(--mono);
+  font-size: 1rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--brass);
+  text-shadow: 0 0 8px rgba(57, 255, 136, 0.45);
+}
+html[data-theme="ops"] header a.brand::before { content: "▌"; margin-right: 0.35rem; animation: ops-blink 1.2s steps(1) infinite; }
+@keyframes ops-blink { 50% { opacity: 0; } }
+html[data-theme="ops"] nav a,
+html[data-theme="ops"] nav button.linkish {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  border-color: var(--line);
+  border-radius: 4px;
+  color: var(--ink);
+  background: transparent;
+  font-weight: 400;
+}
+html[data-theme="ops"] nav a:hover,
+html[data-theme="ops"] nav button.linkish:hover { color: var(--brass); border-color: var(--brass); box-shadow: var(--glow); background: transparent; }
+
+html[data-theme="ops"] h1,
+html[data-theme="ops"] .evac-topbar h1 {
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--brass);
+  text-shadow: 0 0 10px rgba(57, 255, 136, 0.35);
+}
+html[data-theme="ops"] h1::before { content: "> "; color: var(--muted); text-shadow: none; }
+html[data-theme="ops"] main a { color: var(--brass); }
+html[data-theme="ops"] .lede { font-family: var(--mono); font-size: 0.85rem; letter-spacing: 0.02em; }
+
+/* ── Forms and buttons ── */
+html[data-theme="ops"] input[type="text"],
+html[data-theme="ops"] input[type="password"],
+html[data-theme="ops"] input[type="email"],
+html[data-theme="ops"] select {
+  background: #030504;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: var(--mono);
+}
+html[data-theme="ops"] input::placeholder { color: #5f7d6d; }
+html[data-theme="ops"] input:focus,
+html[data-theme="ops"] select:focus { outline: none; border-color: var(--brass); box-shadow: var(--glow); }
+html[data-theme="ops"] button,
+html[data-theme="ops"] a.button {
+  background: var(--brass);
+  border: 1px solid var(--brass);
+  color: #021a0c;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+html[data-theme="ops"] button:hover,
+html[data-theme="ops"] a.button:hover { background: #6dffaa; box-shadow: var(--glow); }
+html[data-theme="ops"] button.secondary,
+html[data-theme="ops"] a.button.secondary {
+  background: transparent;
+  color: var(--brass);
+  border-color: var(--sage-line);
+}
+html[data-theme="ops"] button.secondary:hover,
+html[data-theme="ops"] a.button.secondary:hover { border-color: var(--brass); background: rgba(57, 255, 136, 0.06); }
+html[data-theme="ops"] button:disabled { opacity: 0.5; box-shadow: none; }
+html[data-theme="ops"] input[type="checkbox"] { accent-color: var(--brass); }
+
+html[data-theme="ops"] .status { font-family: var(--mono); font-size: 0.85rem; }
+html[data-theme="ops"] .status:not(:empty)::before { content: "> "; color: var(--brass); }
+html[data-theme="ops"] ul.matches li {
+  background: var(--card);
+  border-color: var(--line);
+  border-left: 3px solid var(--brass);
+  border-radius: 4px;
+  box-shadow: none;
+}
+html[data-theme="ops"] .kind,
+html[data-theme="ops"] .coords { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
+
+/* ── Map + panel ── */
+html[data-theme="ops"] .evac-map { background: #050807; }
+html[data-theme="ops"] .evac-panel { background: var(--card); border-left: 1px solid var(--line); }
+html[data-theme="ops"] .evac-panel h2,
+html[data-theme="ops"] .map-legend h3,
+html[data-theme="ops"] .live-hazards h3 {
+  font-family: var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.8rem;
+  color: var(--brass);
+}
+html[data-theme="ops"] .evac-panel h2::before { content: "// "; color: var(--muted); }
+
+html[data-theme="ops"] .mode-toggle { border-color: var(--line); border-radius: 4px; }
+html[data-theme="ops"] .mode-btn { background: #030504; color: var(--muted); font-family: var(--mono); font-weight: 600; border: none; }
+html[data-theme="ops"] .mode-btn.active { background: var(--brass); color: #021a0c; box-shadow: none; }
+html[data-theme="ops"] .mode-btn:hover:not(.active) { background: var(--card-2); color: var(--ink); }
+
+html[data-theme="ops"] .route-card { background: var(--card-2); border: 1px solid var(--line); border-radius: 4px; }
+html[data-theme="ops"] .route-card:hover,
+html[data-theme="ops"] .route-card.highlighted { box-shadow: 0 0 0 1px currentColor, 0 0 16px rgba(34, 211, 238, 0.15); }
+html[data-theme="ops"] .route-card-title { color: var(--ink); }
+html[data-theme="ops"] .route-card-badge { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.06em; border-radius: 3px; color: #031015; }
+html[data-theme="ops"] .route-card-stats { font-family: var(--mono); font-size: 0.8rem; }
+html[data-theme="ops"] .route-card-damage { color: #ff8a8a; }
+html[data-theme="ops"] .route-card-hazard { background: rgba(251, 146, 60, 0.08); color: #fdba74; }
+html[data-theme="ops"] .route-card-reason { color: var(--muted); }
+html[data-theme="ops"] .route-card-damage[style] { background: rgba(148, 163, 184, 0.08) !important; color: #a3b8ad !important; border-left-color: #4b6358 !important; }
+html[data-theme="ops"] .saved-copy-note { background: rgba(57, 255, 136, 0.05); border-left-color: var(--brass); color: var(--ink); font-family: var(--mono); font-size: 0.75rem; }
+
+html[data-theme="ops"] .layer-toggles { border-color: var(--line); border-radius: 4px; background: rgba(0, 0, 0, 0.25); }
+html[data-theme="ops"] .layer-toggles legend { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.72rem; color: var(--brass); }
+html[data-theme="ops"] .layer-toggles label { color: var(--ink); }
+html[data-theme="ops"] .legend-row { color: var(--ink); }
+html[data-theme="ops"] .swatch { border-color: rgba(255, 255, 255, 0.15); }
+
+html[data-theme="ops"] .evac-footer { border-top-color: var(--line); }
+html[data-theme="ops"] .footer-note { color: var(--muted); }
+html[data-theme="ops"] .footer-note a { color: var(--brass); }
+html[data-theme="ops"] .footer-disclaimer { background: rgba(251, 191, 36, 0.07); color: #fcd34d; border-left-color: #fbbf24; }
+html[data-theme="ops"] .panel-placeholder { color: var(--muted); }
+html[data-theme="ops"] .panel-loading { font-family: var(--mono); font-size: 0.8rem; color: var(--brass); }
+html[data-theme="ops"] .spinner { border-color: var(--line); border-top-color: var(--brass); }
+
+/* Relief planning */
+html[data-theme="ops"] .suggest-results { color: var(--ink); }
+html[data-theme="ops"] .suggest-summary { background: rgba(20, 184, 166, 0.08); border-left-color: var(--suggest); }
+html[data-theme="ops"] .suggest-site { border-top-color: var(--line); }
+html[data-theme="ops"] .suggest-site:hover { background: rgba(20, 184, 166, 0.08); }
+html[data-theme="ops"] .suggest-site strong { color: #5eead4; }
+html[data-theme="ops"] .suggest-basis { color: var(--muted); }
+.suggest-marker { background: var(--suggest); }
+
+/* Live hazards */
+html[data-theme="ops"] .live-hazards { background: rgba(251, 146, 60, 0.05); border: 1px solid rgba(251, 146, 60, 0.35); border-radius: 4px; }
+html[data-theme="ops"] .live-hazards h3 { color: #fdba74; }
+html[data-theme="ops"] .live-line { color: var(--ink); }
+html[data-theme="ops"] .live-line.muted { color: var(--muted); }
+html[data-theme="ops"] .live-line a { color: var(--brass); }
+html[data-theme="ops"] .live-alert { background: rgba(34, 197, 94, 0.08); }
+html[data-theme="ops"] .live-alert.level-orange { background: rgba(234, 88, 12, 0.12); }
+html[data-theme="ops"] .live-alert.level-red { background: rgba(185, 28, 28, 0.18); }
+
+/* Offline */
+html[data-theme="ops"] .offline-banner { background: #120d02; color: #fcd34d; border: 1px solid #a16207; font-family: var(--mono); font-size: 0.82rem; }
+html[data-theme="ops"] .saved-areas { background: var(--card); border-color: var(--line); border-radius: 4px; }
+html[data-theme="ops"] .saved-areas summary { font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.8rem; color: var(--brass); }
+html[data-theme="ops"] .saved-list li { border-top-color: var(--line); }
+html[data-theme="ops"] .saved-meta,
+html[data-theme="ops"] .saved-note { color: var(--muted); font-family: var(--mono); font-size: 0.72rem; }
+
+/* Toast */
+html[data-theme="ops"] .map-toast { background: #000; color: var(--ink); border: 1px solid var(--brass); box-shadow: var(--glow); font-family: var(--mono); font-weight: 500; font-size: 0.82rem; border-radius: 4px; }
+
+/* ── Leaflet chrome ── */
+html[data-theme="ops"] .leaflet-bar a,
+html[data-theme="ops"] .leaflet-control-layers {
+  background: #030504; color: var(--brass); border-color: var(--line);
+}
+html[data-theme="ops"] .leaflet-bar a:hover { background: var(--card-2); }
+html[data-theme="ops"] .leaflet-bar { border: 1px solid var(--line); box-shadow: var(--glow); }
+html[data-theme="ops"] .leaflet-control-layers { border: 1px solid var(--line); color: var(--ink); font-family: var(--mono); font-size: 0.78rem; }
+html[data-theme="ops"] .leaflet-control-layers-toggle { filter: invert(1) hue-rotate(180deg) brightness(1.4); }
+html[data-theme="ops"] .leaflet-control-attribution { background: rgba(0, 0, 0, 0.7) !important; color: #6f8f7f; }
+html[data-theme="ops"] .leaflet-control-attribution a { color: #8fd1aa; }
+html[data-theme="ops"] .leaflet-popup-content-wrapper,
+html[data-theme="ops"] .leaflet-popup-tip { background: #050807; color: var(--ink); border: 1px solid var(--line); box-shadow: var(--glow); }
+html[data-theme="ops"] .leaflet-popup-content-wrapper { border-radius: 4px; }
+html[data-theme="ops"] .leaflet-container a.leaflet-popup-close-button { color: var(--muted); }
+html[data-theme="ops"] .shelter-popup .shelter-type,
+html[data-theme="ops"] .shelter-popup .shelter-street { color: var(--muted); }
+html[data-theme="ops"] .shelter-popup-actions { border-top-color: var(--line); }
+html[data-theme="ops"] .btn-sv-trigger,
+html[data-theme="ops"] .btn-sv-card {
+  background: transparent; color: var(--brass); border: 1px solid var(--sage-line);
+  font-family: var(--mono); font-weight: 600;
+}
+html[data-theme="ops"] .btn-sv-trigger:hover { background: rgba(57, 255, 136, 0.08); border-color: var(--brass); color: var(--brass); }
+html[data-theme="ops"] .dead-end-x { color: #cbd5e1; text-shadow: 0 0 3px #000; }
+html[data-theme="ops"] .streetview-drawer { border: 1px solid var(--line); box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), var(--glow); }
+html[data-theme="ops"] .streetview-header,
+html[data-theme="ops"] .streetview-footer { background: #030504; }
+html[data-theme="ops"] .btn-close,
+html[data-theme="ops"] .btn-tool { background: transparent; color: var(--ink); border-color: var(--line); font-family: inherit; font-weight: 400; box-shadow: none; }
+
+/* Theme toggle button */
+.theme-toggle { white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="ops"] header a.brand::before { animation: none; }
+}
+
+/* Route-card colour for the hover ring (uses currentColor) */
+html[data-theme="ops"] .route-card[data-rank="1"]:hover, html[data-theme="ops"] .route-card[data-rank="1"].highlighted { color: var(--route-1); }
+html[data-theme="ops"] .route-card[data-rank="2"]:hover, html[data-theme="ops"] .route-card[data-rank="2"].highlighted { color: var(--route-2); }
+html[data-theme="ops"] .route-card[data-rank="3"]:hover, html[data-theme="ops"] .route-card[data-rank="3"].highlighted { color: var(--route-3); }
+html[data-theme="ops"] .route-card:hover .route-card-stats,
+html[data-theme="ops"] .route-card.highlighted .route-card-stats { color: var(--muted); }
+html[data-theme="ops"] .route-card:hover .route-card-reason,
+html[data-theme="ops"] .route-card.highlighted .route-card-reason { color: var(--muted); }
+/* The retry button is styled inline in map.js */
+html[data-theme="ops"] #retry-routes-btn { background: transparent !important; color: var(--brass) !important; border: 1px solid var(--brass) !important; }
+html[data-theme="ops"] .error-card p { color: var(--ink); }
+
+html[data-theme="ops"] { --sw-shelter-ring: #22C55E; }
+
+/* Dark basemap: the standard OpenStreetMap tiles, inverted and tinted green-grey.
+   Satellite imagery is left untouched. */
+html[data-theme="ops"] .leaflet-tile-pane .osm-tiles {
+  filter: invert(1) hue-rotate(180deg) saturate(0.35) brightness(0.82) contrast(1.15) sepia(0.25) hue-rotate(75deg);
+}
